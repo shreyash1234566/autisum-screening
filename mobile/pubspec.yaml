@@ -1,0 +1,60 @@
+name: autism_screening
+description: India-focused autism screening tool - Jomga Health
+
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.2.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # Camera & Vision
+  # 0.11.0+: Android 16 (API 36) compatible; handles edge-to-edge insets
+  camera: ^0.11.0
+  google_mlkit_face_detection: ^0.11.0
+
+  # Text-to-speech (Google TTS for name call)
+  # 4.0.2: Android 16 compatible; updated TTS engine API
+  flutter_tts: ^4.0.2
+
+  # HTTP
+  dio: ^5.7.0
+
+  # Local storage
+  shared_preferences: ^2.2.2
+
+  # Video playback
+  video_player: ^2.8.3
+
+  # Permissions
+  # 11.3.1: Android 16 runtime permission changes; handles CAMERA on API 36
+  permission_handler: ^11.3.1
+
+  # UUID
+  uuid: ^4.3.3
+
+  # Charts (gaze data preview)
+  fl_chart: ^0.67.0
+
+  # Path
+  path_provider: ^2.1.2
+  path: ^1.9.0
+
+  # JSON
+  json_annotation: ^4.8.1
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  build_runner: ^2.4.8
+  json_serializable: ^6.7.1
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/

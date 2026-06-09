@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Per-app language support (Android 13+, required field when android:localeConfig is set) -->
+<locale-config xmlns:android="http://schemas.android.com/apk/res/android">
+    <locale android:name="en"/>   <!-- English -->
+    <locale android:name="hi"/>   <!-- Hindi (primary Indian language for M-CHAT-R) -->
+</locale-config>
