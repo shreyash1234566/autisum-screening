@@ -1,13 +1,30 @@
 # AutiScreen — India-Focused Autism Screening App
 
-> **Screening tool only. Not a diagnostic instrument.**  
-> All clinical decisions are made by the registered doctor.
+> [!WARNING]
+> **AutiScreen is a clinical screening support system, NOT a diagnostic instrument.**  
+> All diagnostic determinations and clinical decisions must be made by a registered, licensed healthcare clinician.
 
 ---
 
-## Architecture
+## 1. Project Overview
+AutiScreen is an India-focused clinical screening support system designed to detect early indicators of Autism Spectrum Disorder (ASD) in children. The platform bridges the gap between digital behavioral analysis and clinical oversight by combining on-device gaze-tracking, server-side visual behavior analytics (smile and stereotypical movement detection), and validated questionnaires.
 
-```
+---
+
+## 2. Tech Stack
+* **Mobile (On-Device Client)**: Flutter (Android 5.0+, API 21+), MediaPipe Face Mesh (478 landmarks, 468-477 iris markers for gaze tracking).
+* **Backend (Analysis API)**: Python 3.11, FastAPI, SQLAlchemy ORM, Alembic.
+* **Database (Storage)**: PostgreSQL (production), SQLite StaticPool (development/in-memory testing).
+* **Behavioral Engines**: OpenFace 3.0 (Action Units AU6/AU12 smile detection), ASDMotion (repetitive movement detection).
+* **Machine Learning**: Scikit-Learn (Random Forest model trained on UCI ASD Screening datasets).
+* **Dashboard (Clinician Portal)**: React, TailwindCSS.
+* **Containerization & CI/CD**: Docker, Docker Compose, GitHub Actions.
+
+---
+
+## 3. Architecture Diagram
+
+```text
 ┌─────────────────────────────────────┐
 │  Flutter Mobile App (Android 5.0+)  │
 │  • MediaPipe Face Mesh (478 pts)    │
@@ -39,121 +56,93 @@
 
 ---
 
-## Open Source Tools Used
+## 4. Directory Structure
 
-| Tool | Source | Use |
-|------|--------|-----|
-| MediaPipe Face Mesh | google-ai-edge/mediapipe | Gaze + blink (iris lm 468-477) |
-| OpenFace 3.0 | CMU-MultiComp-Lab/OpenFace-3.0 | AU6/AU12 smile detection |
-| ASDMotion | Dinstein-Lab/ASDMotion | Repetitive movement |
-| MMASD+ | pavanravva/enhanced-mmasd | Movement training data |
-| UCI ASD Datasets | Thabtah et al. (CC BY 4.0) | Questionnaire RF model |
-
----
-
-## Scoring Thresholds (from research papers)
-
-| Metric | Threshold | Source |
-|--------|-----------|--------|
-| Social gaze ratio | < 0.45 = risk | Perochon et al. 2023, NEJM Evidence |
-| Name response rate | < 0.33 = risk | Perochon et al. 2023 |
-| Head orientation | > 15° change | Bradshaw et al. 2018, Autism Research |
-| AU6 (smile) | > 1.0 intensity | OpenFace/FACS |
-| AU12 (smile) | > 1.5 intensity | OpenFace/FACS |
-| Blink EAR | < 0.20 = closed | Soukupová & Čech 2016 |
-| M-CHAT-R high risk | score ≥ 8 | Robins et al. 2014 |
-| INDT-ASD cutoff | score ≥ 36/112 | Malhotra et al. 2019, PLOS ONE |
-| Combined flag | ≥ 0.45 | Derived from above |
-
-**Weights:** Questionnaire 40% · Gaze 30% · Name Response 20% · Expression 10%
+```text
+autisum-screening/
+├── .github/workflows/    CI/CD configurations
+├── backend/              FastAPI + Python ML Service
+│   ├── routers/          REST API endpoints
+│   ├── services/         OpenFace, ASDMotion, video & scoring
+│   ├── ml/               Model definitions and thresholds
+│   └── database.py       DB initialization and schemas
+├── dashboard/            React clinician dashboard
+├── database/             PostgreSQL schema definitions
+├── docs/                 Detailed architecture and onboarding docs
+├── ml/                   Model training and UCI downloader scripts
+└── tests/                Full unit, integration, and e2e test suite
+```
 
 ---
 
-## Quick Start
+## 5. Local Setup
+1. **Prerequisites**: Python 3.11, Flutter SDK, Node.js (v18+).
+2. **Train Standalone ML Model**:
+   ```bash
+   cd ml
+   pip install -r requirements.txt
+   python download_data.py
+   python ../backend/ml/train_model.py
+   ```
+3. **Backend Setup**:
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   cp .env.example .env
+   uvicorn main:app --reload
+   ```
+4. **Dashboard Setup**:
+   ```bash
+   cd dashboard
+   npm install
+   npm start
+   ```
 
-### 1. Backend + Dashboard
+---
+
+## 6. Docker Setup
+Build and run the entire suite (PostgreSQL, Backend API, and React Dashboard) with one command:
 ```bash
 cp .env.example .env
-docker-compose up --build
+docker compose up --build
 ```
-- API:       http://localhost:8000
-- Docs:      http://localhost:8000/docs
-- Dashboard: http://localhost:3000
+* **API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs)
+* **Dashboard**: [http://localhost:3000](http://localhost:3000)
 
-### 2. Train Questionnaire Model
+---
+
+## 7. Testing Flow
+To run the automated Python test suite inside the isolated container context:
 ```bash
-cd ml
-pip install -r requirements.txt
-python download_data.py      # Downloads UCI datasets
-python ../backend/ml/train_model.py
-# Expected: ~95% 5-fold CV accuracy (Thabtah et al. 2018)
+docker compose -f tests/docker-compose.test.yml up --build --exit-code-from test-runner
 ```
-
-### 3. Flutter App
+To run and inspect test coverage details:
 ```bash
-cd mobile
-flutter pub get
-# Download MediaPipe model (face_landmarker.task):
-wget -O android/app/src/main/assets/face_landmarker.task \
-  https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/latest/face_landmarker.task
-
-flutter run   # Connect Android device (API 21+)
-```
-
-### 4. OpenFace 3.0
-```bash
-pip install openface-test
-openface download
-# Binary installed to: /usr/local/bin/FeatureExtraction
-```
-
-### 5. ASDMotion
-```bash
-git clone https://github.com/Dinstein-Lab/ASDMotion /opt/ASDMotion
-# Requires OpenPose — see ASDMotion README
+docker compose -f tests/docker-compose.test.yml run test-runner sh -c "pip install pytest-cov && pytest --cov=/app --cov-report=term-missing /tests/"
 ```
 
 ---
 
-## Indian Data
-
-| Dataset | Status | Action |
-|---------|--------|--------|
-| UCI ASD (Thabtah) | ✅ Auto-download | `python ml/download_data.py` |
-| Toddler Kaggle | Manual | kaggle.com/fabdelja/autism-screening-for-toddlers |
-| AMI (AIIMS, 225 Indian kids) | Email request | Email Trapti Shrivastava (arxiv.org/abs/2404.02181) |
-| MMASD+ (movement) | ✅ GitHub | github.com/pavanravva/enhanced-mmasd |
+## 8. API Overview
+* **`POST /children`**: Registers a child profile. Validates age limits and languages.
+* **`POST /sessions/upload`**: Uploads behavioral JSON telemetry and session video for background analysis.
+* **`GET /sessions/{session_id}`**: Retrieves session status, behavioral scores, and risk flags.
+* **`GET /doctor/flagged`**: Lists all sessions flagged for manual clinician review.
+* **`POST /doctor/{session_id}/judgment`**: Records manual clinical determinations.
 
 ---
 
-## Questionnaire Tools
-
-- **M-CHAT-R** (16-30 months): Free from mchatscreen.com · Hindi validated (Juneja 2024)
-- **AIIMS INDT-ASD** (>30 months): Malhotra et al. PLOS ONE 2019 · DOI: 10.1371/journal.pone.0213242
-
----
-
-## Regulatory Note
-
-Per CDSCO Medical Devices Rules 2017 (India):  
-This is a **screening support system**, not a diagnostic device.  
-Clinical validation on Indian children is required before clinical deployment.
+## 9. Development Workflow & Branch Strategy
+To maintain codebase quality, developers must adhere to the following rules:
+* **No Direct Commits to `main`**: All features and fixes must go through pull requests.
+* **Rebase or Squash-and-Merge**: Squash branch histories to keep the main git history readable. No force pushes on shared branches.
+* **Branch Isolation Policies**:
+  - `docs/repository-hardening`: Isolated branch for architectural documents and README updates.
+  - `test/coverage-and-quality`: Isolated branch for QA coverage reports, negative testing, and security configurations.
 
 ---
 
-## Project Files
-
-```
-autism-screening-app/
-├── mobile/           Flutter app (Android 5.0+, API 21+)
-│   ├── lib/          Dart source
-│   └── android/      Native MediaPipe (Kotlin)
-├── backend/          FastAPI + Python ML
-│   ├── routers/      REST endpoints
-│   ├── services/     OpenFace, ASDMotion, scoring
-│   └── ml/           Model training + thresholds
-├── dashboard/        React doctor dashboard
-├── database/         PostgreSQL schema
-├── ml/               Standalone training scripts
-└── docker-compose.yml
-```
+## 10. Known Limitations & Roadmap
+* **ML Demographics**: Standalone UCI questionnaire RF model is trained on Western populations. Validation on Indian cohorts is pending.
+* **Offline Processing**: Real video analysis requires heavy binaries (OpenFace/ASDMotion). Mobile clients fall back to on-device MediaPipe outputs, and server queues processing asynchronously.
+* **Roadmap**: Enforce auth guards on all clinician endpoints, expand clinical validation on Indian cohorts (AIIMS INDT-ASD), and compile native C++ builds of OpenFace directly inside backend Docker.
