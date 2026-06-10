@@ -8,6 +8,7 @@ which are common in ASD. Runs server-side on session video via OpenPose.
 """
 import subprocess, json, os, logging
 from pathlib import Path
+from typing import Optional
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -15,13 +16,16 @@ logger = logging.getLogger(__name__)
 ASDMOTION_SCRIPT = os.path.join(settings.ASDMOTION_PATH, "detect_stereotypy.py")
 
 
-def run_asdmotion(video_path: str) -> dict:
+def run_asdmotion(video_path: Optional[str]) -> dict:
     """
     Run ASDMotion stereotypy detection on a video file.
     Returns per-segment repetitive movement scores.
     """
-    if not os.path.exists(video_path):
-        return {"error": "video_not_found"}
+    if not video_path or not os.path.exists(video_path):
+        logger.warning(f"Video not found or empty path: {video_path}. Using mock ASDMotion result.")
+        ret = _mock_asdmotion()
+        ret["error"] = "video_not_found"
+        return ret
 
     if not os.path.exists(ASDMOTION_SCRIPT):
         logger.warning(
@@ -40,15 +44,21 @@ def run_asdmotion(video_path: str) -> dict:
         )
         if result.returncode != 0:
             logger.error(f"ASDMotion error: {result.stderr}")
-            return {"error": result.stderr[:500]}
+            ret = _mock_asdmotion()
+            ret["error"] = result.stderr[:500]
+            return ret
 
         data = json.loads(result.stdout)
         return _aggregate_asdmotion(data)
 
     except subprocess.TimeoutExpired:
-        return {"error": "timeout"}
+        ret = _mock_asdmotion()
+        ret["error"] = "timeout"
+        return ret
     except json.JSONDecodeError as e:
-        return {"error": f"json_parse: {e}"}
+        ret = _mock_asdmotion()
+        ret["error"] = f"json_parse: {e}"
+        return ret
 
 
 def _aggregate_asdmotion(raw: dict) -> dict:

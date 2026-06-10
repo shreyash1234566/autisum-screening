@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
 import uuid
-from database import get_db, Child
+from database import get_db, Child, Doctor
 
 router = APIRouter(prefix="/children", tags=["children"])
 
@@ -29,6 +29,11 @@ class ChildOut(BaseModel):
 
 @router.post("", response_model=ChildOut)
 def register_child(data: ChildCreate, db: Session = Depends(get_db)):
+    if data.doctor_id:
+        doctor = db.query(Doctor).filter(Doctor.id == data.doctor_id).first()
+        if not doctor:
+            raise HTTPException(status_code=400, detail="Doctor not found")
+
     child_id = data.id or str(uuid.uuid4())
     existing = db.query(Child).filter(Child.id == child_id).first()
     if existing:

@@ -64,10 +64,10 @@ class Session(Base):
     risk_level           = Column(String(10))  # low | medium | high
     flagged              = Column(Boolean, default=False)
 
-    # Processing status
     processing_status    = Column(String(20), default="pending")
-    # pending | processing | done | error
+    # pending | processing | done | error | completed_fallback
     processing_error     = Column(Text, nullable=True)
+    processing_note      = Column(Text, nullable=True)
 
     # Doctor judgment
     doctor_judgment      = Column(String(20), nullable=True)
@@ -86,3 +86,9 @@ class Doctor(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 Base.metadata.create_all(bind=engine)
+
+if engine.dialect.name == "postgresql":
+    from sqlalchemy import text
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS processing_note TEXT"))
+        conn.commit()
