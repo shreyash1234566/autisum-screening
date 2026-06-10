@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.coverage
+htmlcov/
+.cov/
+cov_report/
+
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins/
+.flutter-plugins-dependencies
+build/
+mobile/build/
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/gradle/wrapper/gradle-wrapper.jar
+mobile/android/gradlew
+mobile/android/gradlew.bat
+pubspec.lock
+
+# Node.js
+node_modules/
+dist/
+.eslintcache
+.npm/
+
+# IDEs & System files
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+
+# Environments & Local Configuration
+.env
+buildlog.txt
+*.log
+/data/
+/db-data/

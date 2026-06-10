@@ -1,8 +1,11 @@
-import json, uuid, logging
-from fastapi import APIRouter, Depends, UploadFile, File, Form, BackgroundTasks, HTTPException
+import json
+import logging
+import os
+import uuid
+from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
-from database import get_db, Session as SessionModel
+from database import get_db, Session as SessionModel, Child
 from services.video_service import save_video
 from services.openface_service import run_openface
 from services.asdmotion_service import run_asdmotion
@@ -24,6 +27,31 @@ async def upload_session(
     data = json.loads(raw)
 
     session_id = data.get("session_id") or str(uuid.uuid4())
+    import re
+    if not re.match(r"^[a-zA-Z0-9_\-]+$", session_id):
+        raise HTTPException(status_code=400, detail="Invalid session_id format")
+
+    # ── VALIDATION ──────────────────────────────────────────────────────────
+    # 1. Validate child_id is provided and exists in children table
+    child_id = data.get("child_id")
+    if not child_id:
+        raise HTTPException(status_code=400, detail="child_id is required")
+
+    child = db.query(Child).filter(Child.id == child_id).first()
+    if not child:
+        raise HTTPException(status_code=400, detail="Child not found")
+
+    # 2. Validate session_id is not duplicate
+    existing_session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
+    if existing_session:
+        raise HTTPException(status_code=400, detail="Session already exists")
+
+    # 3. Validate started_at format
+    started_at_str = data.get("started_at")
+    try:
+        started_at = datetime.fromisoformat(started_at_str) if started_at_str else datetime.utcnow()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid started_at ISO format")
 
     # Save video bytes if provided
     video_path = None
@@ -44,12 +72,13 @@ async def upload_session(
         q_risk = "low" if q_score < 25 else ("medium" if q_score < 36 else "high")
         q_norm = q_score / 112.0
     else:
-        q_risk = "unknown"; q_norm = 0.5
+        q_risk = "unknown"
+        q_norm = 0.5
 
     session = SessionModel(
         id=session_id,
-        child_id=data["child_id"],
-        started_at=datetime.fromisoformat(data.get("started_at", datetime.utcnow().isoformat())),
+        child_id=child_id,
+        started_at=started_at,
         video_path=video_path,
         gaze_task_a=data.get("gaze_task_a", []),
         gaze_task_b=data.get("gaze_task_b", []),
@@ -85,12 +114,17 @@ def _process_session(session_id: str, video_path: str | None):
         session.processing_status = "processing"
         db.commit()
 
+        # Check if video_path is missing or unreadable
+        video_missing_or_unreadable = False
+        if not video_path or not os.path.exists(video_path):
+            video_missing_or_unreadable = True
+
         # OpenFace
-        openface_result = run_openface(video_path) if video_path else {}
+        openface_result = run_openface(video_path)
         openface_result = openface_result or {}
 
         # ASDMotion
-        asdmotion_result = run_asdmotion(video_path) if video_path else {}
+        asdmotion_result = run_asdmotion(video_path)
         asdmotion_result = asdmotion_result or {}
 
         # Scoring
@@ -105,9 +139,29 @@ def _process_session(session_id: str, video_path: str | None):
         session.combined_risk_score = scores["combined_score"]
         session.risk_level          = scores["risk_level"]
         session.flagged             = scores["flagged"]
-        session.processing_status   = "done"
+
+        # Fallback evaluation
+        is_fallback = (
+            video_missing_or_unreadable
+            or openface_result.get("mock") is True
+            or asdmotion_result.get("mock") is True
+        )
+
+        if is_fallback:
+            session.processing_status = "completed_fallback"
+            session.processing_note = (
+                "Fallback processing used. Reason: "
+                f"Video missing/unreadable={video_missing_or_unreadable}, "
+                f"OpenFace mock={openface_result.get('mock') is True}, "
+                f"ASDMotion mock={asdmotion_result.get('mock') is True}."
+            )
+        else:
+            session.processing_status = "done"
+            session.processing_note = "Real video analysis completed successfully."
+
+        session.processing_error = None
         db.commit()
-        logger.info(f"Session {session_id} processed: {scores['risk_level']}")
+        logger.info(f"Session {session_id} processed ({session.processing_status}): {scores['risk_level']}")
 
     except Exception as e:
         logger.exception(f"Processing failed for {session_id}: {e}")
@@ -115,6 +169,7 @@ def _process_session(session_id: str, video_path: str | None):
         if session:
             session.processing_status = "error"
             session.processing_error = str(e)[:500]
+            session.processing_note = "An unrecoverable execution error occurred."
             db.commit()
     finally:
         db.close()
@@ -137,4 +192,6 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
         "questionnaire_score": s.questionnaire_score,
         "questionnaire_type":  s.questionnaire_type,
         "questionnaire_risk":  s.questionnaire_risk,
+        "processing_note":     s.processing_note,
+        "processing_error":    s.processing_error,
     }

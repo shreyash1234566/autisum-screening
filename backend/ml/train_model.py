@@ -10,7 +10,8 @@ Datasets (Thabtah et al. 2018, CC BY 4.0):
 
 Expected accuracy: >95% (as per published papers)
 """
-import os, joblib, numpy as np, pandas as pd
+import joblib
+import pandas as pd
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import cross_val_score, StratifiedKFold

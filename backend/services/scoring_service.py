@@ -4,11 +4,10 @@ Combines all behavioral + questionnaire signals into a final risk score.
 All weights and thresholds from cited research papers in scoring_thresholds.py
 """
 import logging
-from typing import Optional
 from ml.scoring_thresholds import (
     score_gaze, score_name_response, score_expression,
     score_questionnaire_mchat, score_questionnaire_indt,
-    combined_risk, INDT_ASD_CUTOFF,
+    combined_risk,
 )
 
 logger = logging.getLogger(__name__)
@@ -71,7 +70,6 @@ def run_full_scoring(session_db, openface_result: dict, asdmotion_result: dict) 
     # ── 5. Questionnaire ─────────────────────────────────────────────────────
     q_type  = session_db.questionnaire_type or "unknown"
     q_score = session_db.questionnaire_score or 0
-    q_risk  = session_db.questionnaire_risk  or "unknown"
 
     if q_type == "mchat_r":
         q_norm = score_questionnaire_mchat(q_score)

@@ -5,10 +5,9 @@ Published accuracy: >95% on binary ASD/no-ASD classification
 kaggle.com/fabdelja/autism-screening-for-toddlers
 archive.ics.uci.edu/dataset/419
 """
-import joblib, numpy as np, os
+import joblib
+import numpy as np
 from pathlib import Path
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
 
 MODEL_PATH = Path(__file__).parent / "questionnaire_model.pkl"
 ENCODERS_PATH = Path(__file__).parent / "encoders.pkl"

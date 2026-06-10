@@ -38,7 +38,7 @@ def get_flagged_sessions(db: Session = Depends(get_db)):
     rows = (
         db.query(SessionModel, Child)
         .join(Child, SessionModel.child_id == Child.id)
-        .filter(SessionModel.flagged == True)
+        .filter(SessionModel.flagged)
         .order_by(SessionModel.started_at.desc())
         .all()
     )
