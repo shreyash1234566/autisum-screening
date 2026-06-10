@@ -47,7 +47,7 @@ services:
       - ../backend:/app
     depends_on:
       - backend-test
-    command: sh -c "pip install pytest pytest-asyncio pytest-cov && pytest /tests/ -v"
+    command: sh -c "pip install pytest pytest-asyncio pytest-cov && pytest --cov=. --cov-report=term-missing /tests/ -v"
 
 volumes:
   pgdata-test:

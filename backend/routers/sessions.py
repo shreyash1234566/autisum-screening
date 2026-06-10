@@ -27,6 +27,9 @@ async def upload_session(
     data = json.loads(raw)
 
     session_id = data.get("session_id") or str(uuid.uuid4())
+    import re
+    if not re.match(r"^[a-zA-Z0-9_\-]+$", session_id):
+        raise HTTPException(status_code=400, detail="Invalid session_id format")
 
     # ── VALIDATION ──────────────────────────────────────────────────────────
     # 1. Validate child_id is provided and exists in children table
