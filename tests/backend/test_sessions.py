@@ -482,3 +482,34 @@ def test_asdmotion_service_errors():
         assert res.get("mock") is True
         assert "json_parse" in res.get("error")
         assert res.get("repetitive_score") == 0.0
+
+
+def test_upload_session_invalid_session_id_format(client, db_session):
+    """Test that uploading a session with invalid session_id (e.g. path traversal) fails."""
+    import io
+    import json
+    # Register child first
+    child_payload = {
+        "id": "child-valid-sess-check",
+        "name": "Jane",
+        "age_months": 24,
+        "gender": "F"
+    }
+    client.post("/children", json=child_payload)
+
+    session_data = {
+        "session_id": "../../invalid_id",
+        "child_id": "child-valid-sess-check",
+        "started_at": "2026-06-10T14:15:00Z"
+    }
+    payload_file = io.BytesIO(json.dumps(session_data).encode("utf-8"))
+    
+    r = client.post(
+        "/sessions/upload",
+        files={
+            "session_json": ("session.json", payload_file, "application/json")
+        }
+    )
+    assert r.status_code == 400
+    assert "Invalid session_id format" in r.json()["detail"]
+
