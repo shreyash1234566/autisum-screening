@@ -1,7 +1,7 @@
 """
 video_service.py  — encrypted video storage and retrieval
 """
-import os, uuid, hashlib, logging
+import logging
 from pathlib import Path
 from config import settings
 

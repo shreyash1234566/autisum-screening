@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
 import uuid
@@ -10,11 +10,35 @@ router = APIRouter(prefix="/children", tags=["children"])
 
 class ChildCreate(BaseModel):
     id:          Optional[str] = None
-    name:        str
+    name:        str = Field(..., min_length=1)
     age_months:  int
     gender:      str
     language:    str = "en"
     doctor_id:   Optional[str] = None
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v):
+        if not v.strip():
+            raise ValueError("Name cannot be empty or whitespace")
+        return v.strip()
+
+    @field_validator("age_months")
+    @classmethod
+    def validate_age(cls, v):
+        if v <= 0:
+            raise ValueError("Age must be positive")
+        if v > 120:
+            raise ValueError("Age exceeds maximum screening limit of 120 months")
+        return v
+
+    @field_validator("language")
+    @classmethod
+    def validate_language(cls, v):
+        supported = {"en", "hi", "ta", "te", "kn", "ml", "mr", "gu", "pa", "bn", "or", "as"}
+        if v.lower() not in supported:
+            raise ValueError(f"Language '{v}' is not supported")
+        return v.lower()
 
 class ChildOut(BaseModel):
     id:          str

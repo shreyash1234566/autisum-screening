@@ -14,7 +14,11 @@ AU thresholds from FACS + OpenFace docs:
   AU12 > 1.5  → Lip corner pull (smile shape)
   Combined → genuine social smile
 """
-import subprocess, csv, tempfile, os, logging
+import csv
+import logging
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 from typing import Optional
 from config import settings
@@ -31,8 +35,6 @@ def run_openface(video_path: Optional[str]) -> dict:
         return _mock_openface_result()
 
     with tempfile.TemporaryDirectory() as tmpdir:
-        out_csv = os.path.join(tmpdir, "features.csv")
-
         cmd = [
             settings.OPENFACE_BIN,
             "-f", video_path,

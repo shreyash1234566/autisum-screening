@@ -1,5 +1,8 @@
-import json, uuid, logging, os
-from fastapi import APIRouter, Depends, UploadFile, File, Form, BackgroundTasks, HTTPException
+import json
+import logging
+import os
+import uuid
+from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
 from database import get_db, Session as SessionModel, Child
@@ -66,7 +69,8 @@ async def upload_session(
         q_risk = "low" if q_score < 25 else ("medium" if q_score < 36 else "high")
         q_norm = q_score / 112.0
     else:
-        q_risk = "unknown"; q_norm = 0.5
+        q_risk = "unknown"
+        q_norm = 0.5
 
     session = SessionModel(
         id=session_id,

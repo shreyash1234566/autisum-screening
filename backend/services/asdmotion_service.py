@@ -6,8 +6,10 @@ github.com/Dinstein-Lab/ASDMotion
 Detects stereotypical repetitive movements (hand-flapping, rocking, spinning)
 which are common in ASD. Runs server-side on session video via OpenPose.
 """
-import subprocess, json, os, logging
-from pathlib import Path
+import json
+import logging
+import os
+import subprocess
 from typing import Optional
 from config import settings
 

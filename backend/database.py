@@ -1,10 +1,9 @@
 from sqlalchemy import (
     create_engine, Column, String, Integer, Float, Boolean,
-    DateTime, Text, JSON, ForeignKey, Enum as SAEnum
+    DateTime, Text, JSON, ForeignKey
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
-import enum
 from config import settings
 
 engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
