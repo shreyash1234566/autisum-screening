@@ -1,0 +1,53 @@
+version: "3.9"
+
+services:
+  db-test:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: autism_test_db
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+    volumes:
+      - pgdata-test:/var/lib/postgresql/data
+      - ../database/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U test_user -d autism_test_db"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend-test:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8000"
+    environment:
+      DATABASE_URL: postgresql://test_user:test_password@db-test:5432/autism_test_db
+      VIDEO_STORAGE_PATH: /tmp/videos
+      OPENFACE_BIN: /usr/local/bin/FeatureExtraction
+      ASDMOTION_PATH: /opt/ASDMotion
+    volumes:
+      - ../backend:/app
+    depends_on:
+      db-test:
+        condition: service_healthy
+
+  test-runner:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    environment:
+      API_BASE_URL: http://backend-test:8000
+      DATABASE_URL: "sqlite:///:memory:"
+    volumes:
+      - ../tests:/tests
+      - ../backend:/app
+    depends_on:
+      - backend-test
+    command: sh -c "pip install pytest pytest-asyncio pytest-cov && pytest /tests/ -v"
+
+volumes:
+  pgdata-test:
