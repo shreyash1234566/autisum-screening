@@ -10,7 +10,7 @@ android {
 
     defaultConfig {
         applicationId "com.autism.screening.autiscreen"
-        minSdkVersion flutter.minSdkVersion           // Android 5.0+ — kept for broad reach
+        minSdk 24           // Android 7.0+ — required by flutter_tts
         targetSdk 36        // Android 16
         versionCode 1
         versionName "1.0.0"
@@ -42,6 +42,7 @@ android {
         release {
             signingConfig signingConfigs.debug
             minifyEnabled false
+            shrinkResources false
         }
     }
 }
@@ -63,6 +64,7 @@ dependencies {
     implementation "androidx.camera:camera-core:1.4.0"
     implementation "androidx.camera:camera-camera2:1.4.0"
     implementation "androidx.camera:camera-lifecycle:1.4.0"
+    implementation "androidx.camera:camera-video:1.4.0"   // VideoCapture + Recorder API
 
     // Activity + Window for edge-to-edge / back-gesture APIs
     implementation "androidx.activity:activity-ktx:1.9.0"

@@ -104,8 +104,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
               validator: (v) {
                 if (v == null || v.isEmpty) return 'Required';
                 final n = int.tryParse(v);
-                if (n == null || n < 16 || n > 144) {
-                  return 'Enter age 16-144 months (1-12 years)';
+                if (n == null || n < 16 || n > 120) {
+                  return 'Enter age 16-120 months (1.5-10 years)';
                 }
                 return null;
               },

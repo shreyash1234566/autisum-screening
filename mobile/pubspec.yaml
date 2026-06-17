@@ -5,56 +5,45 @@ publish_to: 'none'
 version: 1.0.0+1
 
 environment:
-  sdk: ">=3.2.0 <4.0.0"
+  sdk: ">=3.4.0 <4.0.0"
 
 dependencies:
   flutter:
     sdk: flutter
-  cupertino_icons: ^1.0.6
+  cupertino_icons: ^1.0.8
 
-  # Camera & Vision
-  # 0.11.0+: Android 16 (API 36) compatible; handles edge-to-edge insets
-  camera: ^0.11.0
-  google_mlkit_face_detection: ^0.11.0
-
-  # Text-to-speech (Google TTS for name call)
-  # 4.0.2: Android 16 compatible; updated TTS engine API
+  # Text-to-speech — pre-warms for child name call (Task B) and imitation prompts (Task C)
+  # 4.0.2: Android 16 / API 36 compatible; updated TTS engine API
   flutter_tts: ^4.0.2
 
-  # HTTP
+  # HTTP — session upload to Jomga Health backend
   dio: ^5.7.0
 
-  # Local storage
-  shared_preferences: ^2.2.2
+  # Local key-value storage — child profile persistence
+  shared_preferences: ^2.2.3
 
-  # Video playback
-  video_player: ^2.8.3
-
-  # Permissions
-  # 11.3.1: Android 16 runtime permission changes; handles CAMERA on API 36
+  # Runtime permissions — CAMERA, RECORD_AUDIO for Tasks A/B/C
+  # 11.3.1: handles Android 16 permission model changes correctly
   permission_handler: ^11.3.1
 
-  # UUID
-  uuid: ^4.3.3
+  # UUID — session and child IDs
+  uuid: ^4.4.0
 
-  # Charts (gaze data preview)
-  fl_chart: ^0.67.0
-
-  # Path
-  path_provider: ^2.1.2
+  # Path utilities — local encrypted session file path
+  path_provider: ^2.1.4
   path: ^1.9.0
 
-  # JSON
-  json_annotation: ^4.8.1
+  # JSON serialisation — session data / child profile
+  json_annotation: ^4.9.0
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
-  build_runner: ^2.4.8
-  json_serializable: ^6.7.1
+  flutter_lints: ^4.0.0
+  build_runner: ^2.4.12
+  json_serializable: ^6.8.0
 
 flutter:
   uses-material-design: true
   assets:
-    - assets/
+    - assets/face_landmarker.task

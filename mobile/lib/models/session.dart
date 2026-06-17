@@ -1,15 +1,16 @@
 import 'package:json_annotation/json_annotation.dart';
+
 part 'session.g.dart';
 
 // Gaze data point collected at ~30 fps by MediaPipe
-@JsonSerializable()
+@JsonSerializable(fieldRename: FieldRename.snake)
 class GazeDataPoint {
   final int timestampMs;
   final double gazeRatioHorizontal; // 0=full-left  1=full-right  0.5=center
   final double gazeRatioVertical;
   final double headYawDegrees;
   final double headPitchDegrees;
-  final double blinkEar;            // Eye Aspect Ratio
+  final double blinkEar; // Eye Aspect Ratio
 
   const GazeDataPoint({
     required this.timestampMs,
@@ -26,9 +27,9 @@ class GazeDataPoint {
 }
 
 // Name-response trial result
-@JsonSerializable()
+@JsonSerializable(fieldRename: FieldRename.snake)
 class NameTrialResult {
-  final int trialNumber;           // 1, 2, or 3
+  final int trialNumber; // 1, 2, or 3
   final int nameCalledAtMs;
   final bool responseDetected;
   final double? responseLatencyMs; // null if no response
@@ -50,10 +51,10 @@ class NameTrialResult {
 }
 
 // Bubble touch event for Task D
-@JsonSerializable()
+@JsonSerializable(fieldRename: FieldRename.snake)
 class BubbleTouchEvent {
   final int timestampMs;
-  final double screenX;   // 0-1 normalised
+  final double screenX; // 0-1 normalised
   final double screenY;
   final bool hitBubble;
 
@@ -69,19 +70,19 @@ class BubbleTouchEvent {
   Map<String, dynamic> toJson() => _$BubbleTouchEventToJson(this);
 }
 
-@JsonSerializable()
+@JsonSerializable(fieldRename: FieldRename.snake)
 class SessionData {
   final String sessionId;
   final String childId;
   final DateTime startedAt;
-  final String videoPath;           // local encrypted path pre-upload
-  final List<GazeDataPoint> gazeTaskA;   // social preference gaze
-  final List<GazeDataPoint> gazeTaskB;   // name response gaze
+  final String videoPath; // local encrypted path pre-upload
+  final List<GazeDataPoint> gazeTaskA; // social preference gaze
+  final List<GazeDataPoint> gazeTaskB; // name response gaze
   final List<NameTrialResult> nameTrials;
-  final List<GazeDataPoint> gazeTaskC;   // imitation gaze
+  final List<GazeDataPoint> gazeTaskC; // imitation gaze
   final List<BubbleTouchEvent> bubbleEvents;
   final int questionnaireScore;
-  final String questionnaireType;   // 'mchat_r' or 'indt_asd'
+  final String questionnaireType; // 'mchat_r' or 'indt_asd'
   final Map<String, int> questionnaireAnswers;
 
   const SessionData({

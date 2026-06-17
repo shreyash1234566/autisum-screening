@@ -19,6 +19,14 @@ class _SessionCompleteScreenState extends State<SessionCompleteScreen> {
   @override
   void initState() {
     super.initState();
+    _doUpload();
+  }
+
+  // Fix: extracted so retry button can re-invoke it.
+  // Previously, retry only reset UI state but never called uploadFuture() again,
+  // leaving the user with a spinner that never resolved.
+  void _doUpload() {
+    setState(() { _uploading = true; _error = null; });
     widget.uploadFuture().then((_) {
       if (mounted) setState(() { _uploading = false; _success = true; });
     }).catchError((e) {
@@ -63,7 +71,7 @@ class _SessionCompleteScreenState extends State<SessionCompleteScreen> {
                 style: const TextStyle(fontSize: 13, color: AppColors.textSecondary)),
             const SizedBox(height: 24),
             ElevatedButton(
-              onPressed: () => setState(() { _uploading = true; _error = null; }),
+              onPressed: _doUpload,
               child: const Text('Retry'),
             ),
           ],

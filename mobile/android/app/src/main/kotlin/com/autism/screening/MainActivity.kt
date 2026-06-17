@@ -1,50 +1,61 @@
 package com.autism.screening
 
-import android.os.Bundle
-import androidx.core.view.WindowCompat
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val METHOD_CH = "autism_screening/mediapipe"
-    private val EVENT_CH  = "autism_screening/gaze_stream"
 
-    private lateinit var handler: MediaPipeHandler
+    private lateinit var mediaHandler: MediaPipeHandler
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        // Android 16: edge-to-edge is now enforced for apps targeting API 36.
-        // setDecorFitsSystemWindows(false) lets Flutter own the full screen area
-        // and handle WindowInsets via its built-in padding/MediaQuery logic.
-        WindowCompat.setDecorFitsSystemWindows(window, false)
+    companion object {
+        private const val METHOD_CHANNEL = "autism_screening/mediapipe"
+        private const val EVENT_CHANNEL  = "autism_screening/gaze_stream"
     }
 
-    override fun configureFlutterEngine(engine: FlutterEngine) {
-        super.configureFlutterEngine(engine)
+    override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+        super.configureFlutterEngine(flutterEngine)
 
-        handler = MediaPipeHandler(this)
+        mediaHandler = MediaPipeHandler(this)
 
-        // Method channel — start / stop tracking
-        MethodChannel(engine.dartExecutor.binaryMessenger, METHOD_CH)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, METHOD_CHANNEL)
             .setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "startTracking" -> { handler.start(); result.success(null) }
-                    "stopTracking"  -> { handler.stop();  result.success(null) }
+                    "startTracking" -> {
+                        try {
+                            mediaHandler.start()
+                            result.success(null)
+                        } catch (e: Exception) {
+                            result.error("START_ERROR", e.message, null)
+                        }
+                    }
+                    // stopTracking is now ASYNC — waits for video to finalize,
+                    // then returns the MP4 absolute path (String) or null
+                    "stopTracking" -> {
+                        mediaHandler.stop { videoPath ->
+                            // callback fires on main thread (mainExecutor in MediaPipeHandler)
+                            result.success(videoPath)   // null if no video was recorded
+                        }
+                    }
                     else -> result.notImplemented()
                 }
             }
 
-        // Event channel — stream gaze data to Flutter
-        EventChannel(engine.dartExecutor.binaryMessenger, EVENT_CH)
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, EVENT_CHANNEL)
             .setStreamHandler(object : EventChannel.StreamHandler {
-                override fun onListen(args: Any?, sink: EventChannel.EventSink) {
-                    handler.setSink(sink)
+                override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                    mediaHandler.setSink(events)
                 }
-                override fun onCancel(args: Any?) {
-                    handler.setSink(null)
+                override fun onCancel(arguments: Any?) {
+                    mediaHandler.setSink(null)
                 }
             })
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        // stop() with empty callback — fire-and-forget on app close
+        if (::mediaHandler.isInitialized) mediaHandler.stop {}
     }
 }

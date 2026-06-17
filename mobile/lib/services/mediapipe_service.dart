@@ -18,6 +18,10 @@ class MediaPipeService {
   bool _isRunning = false;
   final List<GazeDataPoint> _buffer = [];
 
+  /// Absolute path of the MP4 recorded during the most recent tracking session.
+  /// Populated by stopTracking(). Null if recording failed or hasn't run yet.
+  String? lastVideoPath;
+
   Future<void> startTracking() async {
     if (_isRunning) return;
     _isRunning = true;
@@ -36,12 +40,18 @@ class MediaPipeService {
     await _channel.invokeMethod('startTracking');
   }
 
-  Future<void> stopTracking() async {
-    if (!_isRunning) return;
+  /// Stops tracking and waits for video recording to finalize.
+  /// Returns the absolute path of the saved MP4, or null on error.
+  /// Also stores the path in [lastVideoPath] for retrieval by the caller.
+  Future<String?> stopTracking() async {
+    if (!_isRunning) return lastVideoPath;
     _isRunning = false;
-    await _channel.invokeMethod('stopTracking');
+    // invokeMethod now returns String? — the video file path from Kotlin
+    final path = await _channel.invokeMethod<String?>('stopTracking');
+    lastVideoPath = path;
     await _nativeSub?.cancel();
     _gazeController?.close();
+    return path;
   }
 
   List<GazeDataPoint> consumeBuffer() {
@@ -50,38 +60,34 @@ class MediaPipeService {
     return copy;
   }
 
+  List<GazeDataPoint> getBuffer() {
+    return List<GazeDataPoint>.from(_buffer);
+  }
+
   Stream<GazeDataPoint>? get gazeStream => _gazeStreamBroadcast;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Parse raw map from native MediaPipe Face Landmarker.
   //
-  // Native side (Kotlin) sends a Map with keys:
-  //   timestamp_ms, left_iris_x, left_iris_y, right_iris_x, right_iris_y,
-  //   left_eye_outer_x, left_eye_inner_x, right_eye_inner_x, right_eye_outer_x,
-  //   head_yaw, head_pitch, blink_ear
+  // Fix: was recomputing gazeH as raw average of left_iris_x + right_iris_x,
+  // which ignores eye-width variation and gives a different scale than the
+  // threshold values calibrated from Perochon et al. 2023.
   //
-  // Gaze ratio algorithm:
-  //   iris_center_x = mean(left_iris_x, right_iris_x) in normalised [0,1]
-  //   Horizontal: 0 = full left, 0.5 = center, 1 = full right
-  //   Social content is on LEFT half of split screen (Task A)
+  // Now uses gaze_h and gaze_v sent directly from Kotlin, which are computed
+  // as the eye-width-normalised iris-to-eye-corner ratio — the correct quantity.
+  //
+  // Coordinate convention (after Kotlin-side front-camera horizontal flip):
+  //   gaze_h < 0.5  →  looking at LEFT half of screen  (social content, Task A)
+  //   gaze_h > 0.5  →  looking at RIGHT half of screen (non-social, Task A)
   // ─────────────────────────────────────────────────────────────────────────
   GazeDataPoint _parseGazePoint(Map<String, dynamic> map) {
-    final double leftIrisX  = (map['left_iris_x']  as num).toDouble();
-    final double rightIrisX = (map['right_iris_x'] as num).toDouble();
-    final double leftIrisY  = (map['left_iris_y']  as num).toDouble();
-    final double rightIrisY = (map['right_iris_y'] as num).toDouble();
-
-    // Average both eyes for stable estimate
-    final double gazeH = (leftIrisX + rightIrisX) / 2.0;
-    final double gazeV = (leftIrisY + rightIrisY) / 2.0;
-
     return GazeDataPoint(
-      timestampMs: (map['timestamp_ms'] as int),
-      gazeRatioHorizontal: gazeH,
-      gazeRatioVertical: gazeV,
-      headYawDegrees: (map['head_yaw'] as num).toDouble(),
-      headPitchDegrees: (map['head_pitch'] as num).toDouble(),
-      blinkEar: (map['blink_ear'] as num).toDouble(),
+      timestampMs:          (map['timestamp_ms'] as int),
+      gazeRatioHorizontal:  (map['gaze_h']       as num).toDouble(),
+      gazeRatioVertical:    (map['gaze_v']        as num).toDouble(),
+      headYawDegrees:       (map['head_yaw']      as num).toDouble(),
+      headPitchDegrees:     (map['head_pitch']    as num).toDouble(),
+      blinkEar:             (map['blink_ear']     as num).toDouble(),
     );
   }
 
@@ -106,31 +112,36 @@ class MediaPipeService {
   // Head yaw change > 15 degrees toward center within 3-second window
   // Source: Bradshaw et al. 2018, Autism Research
   // ─────────────────────────────────────────────────────────────────────────
-  static bool detectNameResponse({
+  static Map<String, dynamic>? detectNameResponse({
     required List<GazeDataPoint> gazeData,
     required int nameCalledAtMs,
   }) {
     const int windowMs = TaskConfig.taskBResponseWindowSeconds * 1000;
     final windowPoints = gazeData.where((p) =>
         p.timestampMs >= nameCalledAtMs &&
-        p.timestampMs <= nameCalledAtMs + windowMs);
+        p.timestampMs <= nameCalledAtMs + windowMs).toList();
 
-    if (windowPoints.isEmpty) return false;
+    if (windowPoints.isEmpty) return null;
 
     final baselinePoints = gazeData.where((p) =>
         p.timestampMs >= nameCalledAtMs - 2000 &&
-        p.timestampMs < nameCalledAtMs);
+        p.timestampMs < nameCalledAtMs).toList();
 
-    if (baselinePoints.isEmpty) return false;
+    // If no baseline, use the first point in window as baseline
+    final baselineYaw = baselinePoints.isNotEmpty
+        ? baselinePoints.map((p) => p.headYawDegrees).reduce((a, b) => a + b) / baselinePoints.length
+        : windowPoints.first.headYawDegrees;
 
-    final baselineYaw = baselinePoints
-        .map((p) => p.headYawDegrees)
-        .reduce((a, b) => a + b) / baselinePoints.length;
-
-    // Detect any yaw change > 15° toward center (yaw moves toward 0)
-    return windowPoints.any((p) =>
-        (p.headYawDegrees - baselineYaw).abs() >
-        TaskConfig.headOrientationThresholdDegrees);
+    for (final p in windowPoints) {
+      if ((p.headYawDegrees - baselineYaw).abs() > TaskConfig.headOrientationThresholdDegrees) {
+        return {
+          'latency_ms': p.timestampMs - nameCalledAtMs,
+          'yaw_at_call': baselineYaw,
+          'yaw_at_response': p.headYawDegrees,
+        };
+      }
+    }
+    return null;
   }
 
   // ─────────────────────────────────────────────────────────────────────────

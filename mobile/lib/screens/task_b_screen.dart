@@ -9,8 +9,6 @@ import '../widgets/animated_character.dart';
 
 /// TASK B — Name Response Test
 /// 3 trials, 30-second inter-trial gaps, 3-second response window
-/// Source: Perochon et al. 2023 supplementary protocol;
-///         Bradshaw et al. 2018 (head orientation threshold: 15 degrees)
 class TaskBScreen extends StatefulWidget {
   final String childName;
   final String languageCode;
@@ -38,7 +36,6 @@ class _TaskBScreenState extends State<TaskBScreen> {
 
   final List<NameTrialResult> _trialResults = [];
   final List<GazeDataPoint> _gazeBuffer = [];
-  late List<GazeDataPoint> _currentGaze;
   StreamSubscription<GazeDataPoint>? _gazeSub;
 
   Timer? _phaseTimer;
@@ -85,7 +82,6 @@ class _TaskBScreenState extends State<TaskBScreen> {
 
   void _startTrial() {
     _currentTrial++;
-    _currentGaze = [];
     setState(() {
       _phase = _Phase.nameCalling;
       _statusText = 'Trial $_currentTrial of ${TaskConfig.taskBTrials}';
@@ -95,7 +91,10 @@ class _TaskBScreenState extends State<TaskBScreen> {
     // Record gaze snapshot at name-call moment
     final callGaze = _gazeBuffer.isNotEmpty ? _gazeBuffer.last : null;
     _headYawAtCall = callGaze?.headYawDegrees ?? 0;
-    _nameCalledAtMs = DateTime.now().millisecondsSinceEpoch;
+    
+    // CRITICAL FIX: Use the last received gaze point's timestamp as the reference
+    // instead of wall-clock time, to align with the native uptime timestamps.
+    _nameCalledAtMs = callGaze?.timestampMs ?? DateTime.now().millisecondsSinceEpoch;
 
     widget.ttsService.callName(widget.childName, languageCode: widget.languageCode);
 
@@ -111,14 +110,15 @@ class _TaskBScreenState extends State<TaskBScreen> {
     if (!_waitingForResponse) return;
     _waitingForResponse = false;
 
-    final responseDetected = MediaPipeService.detectNameResponse(
+    final responseMap = MediaPipeService.detectNameResponse(
       gazeData: _gazeBuffer,
       nameCalledAtMs: _nameCalledAtMs!,
     );
 
+    final responseDetected = responseMap != null;
     final responseGaze = _gazeBuffer.isNotEmpty ? _gazeBuffer.last : null;
     final latencyMs = responseDetected
-        ? _findResponseLatency(_gazeBuffer, _nameCalledAtMs!)
+        ? (responseMap['latency_ms'] as num).toDouble()
         : null;
 
     _trialResults.add(NameTrialResult(
@@ -145,22 +145,9 @@ class _TaskBScreenState extends State<TaskBScreen> {
     });
   }
 
-  double? _findResponseLatency(List<GazeDataPoint> data, int calledAtMs) {
-    const thresholdMs = TaskConfig.taskBResponseWindowSeconds * 1000;
-    for (final p in data) {
-      if (p.timestampMs < calledAtMs) continue;
-      if (p.timestampMs > calledAtMs + thresholdMs) break;
-      if ((p.headYawDegrees - _headYawAtCall).abs() >
-          TaskConfig.headOrientationThresholdDegrees) {
-        return (p.timestampMs - calledAtMs).toDouble();
-      }
-    }
-    return null;
-  }
-
-  void _finish() {
+  void _finish() async {
     _gazeSub?.cancel();
-    widget.mediaPipeService.stopTracking();
+    await widget.mediaPipeService.stopTracking();
     final gazeData = widget.mediaPipeService.consumeBuffer();
     widget.onComplete(_trialResults, gazeData);
   }

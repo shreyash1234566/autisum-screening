@@ -3,10 +3,8 @@ import 'package:dio/dio.dart';
 import '../models/session.dart';
 
 class ApiService {
-  static const String _baseUrl = String.fromEnvironment(
-    'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000',
-  );
+  // Use the provided backend URL directly as requested
+  static const String _baseUrl = 'https://automatic-space-trout-pjg9jrwq67j737wr5-8000.app.github.dev';
 
   final Dio _dio = Dio(BaseOptions(
     baseUrl: _baseUrl,
@@ -21,22 +19,26 @@ class ApiService {
 
   Future<Map<String, dynamic>> uploadSession({
     required SessionData session,
-    required String videoPath,
+    String? videoPath,
     void Function(int sent, int total)? onProgress,
   }) async {
-    final formData = FormData.fromMap({
+    final fields = <String, dynamic>{
       'session_json': MultipartFile.fromString(
         jsonEncode(session.toJson()),
         filename: 'session.json',
       ),
-      'video': await MultipartFile.fromFile(
+    };
+
+    if (videoPath != null && videoPath.isNotEmpty) {
+      fields['video'] = await MultipartFile.fromFile(
         videoPath,
         filename: 'session_video.mp4',
-      ),
-    });
+      );
+    }
+
     final resp = await _dio.post(
       '/sessions/upload',
-      data: formData,
+      data: FormData.fromMap(fields),
       onSendProgress: onProgress,
     );
     return Map<String, dynamic>.from(resp.data as Map);

@@ -1,340 +1,271 @@
-// questionnaire.dart
-// M-CHAT-R: for children 16-30 months (from mchatscreen.com, free)
-// AIIMS INDT-ASD: for children > 30 months (Malhotra et al., PLOS ONE 2019)
-// AQ-10: used for UCI dataset model training (Baron-Cohen et al. 2010)
+// questionnaire.dart — M-CHAT-R (16-30 months) and INDT-ASD (>30 months) items
+// M-CHAT-R © Robins, Fein & Barton 2009 — used under public-domain research terms
 
-enum QuestionnaireType { mchatR, indtAsd }
-
-class QuestionItem {
-  final int id;
+class QuestionnaireItem {
+  final String id;
   final String questionEn;
   final String questionHi;
-  final bool invertScoring; // true → "YES" = atypical (risk point)
-  final bool isCritical;    // M-CHAT-R critical items → single fail = medium risk
+  /// true  → answering YES is the at-risk response
+  /// false → answering NO  is the at-risk response
+  final bool riskIfYes;
 
-  const QuestionItem({
+  const QuestionnaireItem({
     required this.id,
     required this.questionEn,
     required this.questionHi,
-    this.invertScoring = false,
-    this.isCritical = false,
+    required this.riskIfYes,
   });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// M-CHAT-R — 20 items — from mchatscreen.com (Robins et al., 2014)
-// Hindi validated: Juneja et al., Indian Pediatrics 2024
-// Critical items: 2, 5, 6, 7, 8, 9, 10, 11, 14, 15 (0-indexed from guide)
-// Scoring:
-//   Questions 2, 5, 12 → YES = atypical (invertScoring = true)
-//   All others         → NO  = atypical
-//   Score 0-2  → Low risk
-//   Score 3-7  → Medium risk (follow-up interview)
-//   Score 8-20 → High risk
+// M-CHAT-R — 20 items, for children 16–30 months
+// Source: Robins et al. (2014), J Autism Dev Disord, 44(2):587–597
 // ─────────────────────────────────────────────────────────────────────────────
-const List<QuestionItem> mchatRQuestions = [
-  QuestionItem(
-    id: 1,
+const List<QuestionnaireItem> mchatRItems = [
+  QuestionnaireItem(
+    id: 'q1',
     questionEn: 'If you point at something across the room, does your child look at it?',
-    questionHi: 'अगर आप कमरे के उस पार किसी चीज़ की ओर इशारा करें, तो क्या आपका बच्चा उसे देखता है?',
-    isCritical: true,
+    questionHi: 'यदि आप कमरे में किसी चीज़ की ओर इशारा करते हैं, तो क्या आपका बच्चा उसे देखता है?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 2,
+  QuestionnaireItem(
+    id: 'q2',
     questionEn: 'Have you ever wondered if your child might be deaf?',
     questionHi: 'क्या आपने कभी सोचा है कि आपका बच्चा बहरा हो सकता है?',
-    invertScoring: true, // YES = atypical
-    isCritical: true,
+    riskIfYes: true,
   ),
-  QuestionItem(
-    id: 3,
-    questionEn: 'Does your child play pretend or make-believe?',
-    questionHi: 'क्या आपका बच्चा बनावटी खेल खेलता है?',
+  QuestionnaireItem(
+    id: 'q3',
+    questionEn: 'Does your child play pretend or make-believe (e.g. pretend to drink from an empty cup)?',
+    questionHi: 'क्या आपका बच्चा नाटकीय खेल खेलता है (जैसे खाली कप से पीने का नाटक करना)?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 4,
-    questionEn: 'Does your child like climbing on things?',
-    questionHi: 'क्या आपका बच्चा चीज़ों पर चढ़ना पसंद करता है?',
+  QuestionnaireItem(
+    id: 'q4',
+    questionEn: 'Does your child like climbing on things (e.g. furniture, playground equipment)?',
+    questionHi: 'क्या आपका बच्चा चीज़ों पर चढ़ना पसंद करता है (जैसे फर्नीचर, झूला)?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 5,
+  QuestionnaireItem(
+    id: 'q5',
     questionEn: 'Does your child make unusual finger movements near his/her eyes?',
-    questionHi: 'क्या आपका बच्चा आँखों के पास असामान्य उंगली की हरकतें करता है?',
-    invertScoring: true, // YES = atypical
-    isCritical: true,
+    questionHi: 'क्या आपका बच्चा अपनी आँखों के पास असामान्य उँगली हिलाने की हरकत करता है?',
+    riskIfYes: true,
   ),
-  QuestionItem(
-    id: 6,
+  QuestionnaireItem(
+    id: 'q6',
     questionEn: 'Does your child point with one finger to ask for something or to get help?',
-    questionHi: 'क्या आपका बच्चा किसी चीज़ के लिए एक उंगली से इशारा करता है?',
-    isCritical: true,
+    questionHi: 'क्या आपका बच्चा किसी चीज़ को पाने के लिए एक उँगली से इशारा करता है?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 7,
+  QuestionnaireItem(
+    id: 'q7',
     questionEn: 'Does your child point with one finger to show you something interesting?',
-    questionHi: 'क्या आपका बच्चा एक उंगली से आपको कोई दिलचस्प चीज़ दिखाता है?',
-    isCritical: true,
+    questionHi: 'क्या आपका बच्चा किसी रोचक चीज़ को दिखाने के लिए एक उँगली से इशारा करता है?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 8,
-    questionEn: 'Is your child interested in other children?',
-    questionHi: 'क्या आपका बच्चा दूसरे बच्चों में रुचि रखता है?',
-    isCritical: true,
+  QuestionnaireItem(
+    id: 'q8',
+    questionEn: 'Is your child interested in other children (e.g. watches, smiles at or goes to them)?',
+    questionHi: 'क्या आपका बच्चा दूसरे बच्चों में रुचि रखता है (देखता है, मुस्कुराता है)?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 9,
-    questionEn: 'Does your child show you things by bringing them to you or holding them up for you to see?',
-    questionHi: 'क्या आपका बच्चा आपको चीज़ें लाकर या उठाकर दिखाता है?',
-    isCritical: true,
+  QuestionnaireItem(
+    id: 'q9',
+    questionEn: 'Does your child show you things by bringing them to you just to share — not to get help?',
+    questionHi: 'क्या आपका बच्चा आपको चीज़ें सिर्फ दिखाने के लिए लाता है — मदद के लिए नहीं?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 10,
-    questionEn: 'Does your child respond to his/her name when you call?',
-    questionHi: 'जब आप नाम लेते हैं, तो क्या आपका बच्चा जवाब देता है?',
-    isCritical: true,
+  QuestionnaireItem(
+    id: 'q10',
+    questionEn: 'Does your child respond when you call his/her name?',
+    questionHi: 'जब आप अपने बच्चे का नाम पुकारते हैं, तो क्या वह प्रतिक्रिया करता/करती है?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 11,
+  QuestionnaireItem(
+    id: 'q11',
     questionEn: 'When you smile at your child, does he/she smile back at you?',
-    questionHi: 'जब आप अपने बच्चे को देखकर मुस्कुराते हैं, तो क्या वह भी मुस्कुराता है?',
-    isCritical: true,
+    questionHi: 'जब आप अपने बच्चे पर मुस्कुराते हैं, तो क्या वह वापस मुस्कुराता/मुस्कुराती है?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 12,
-    questionEn: 'Does your child get upset by everyday noises?',
-    questionHi: 'क्या आपका बच्चा रोज़मर्रा की आवाज़ों से परेशान होता है?',
-    invertScoring: true, // YES = atypical
+  QuestionnaireItem(
+    id: 'q12',
+    questionEn: 'Does your child get upset by everyday noises (e.g. vacuum cleaner, loud music)?',
+    questionHi: 'क्या आपका बच्चा रोज़मर्रा की आवाज़ों से परेशान हो जाता है (जैसे वैक्यूम, तेज़ संगीत)?',
+    riskIfYes: true,
   ),
-  QuestionItem(
-    id: 13,
+  QuestionnaireItem(
+    id: 'q13',
     questionEn: 'Does your child walk?',
     questionHi: 'क्या आपका बच्चा चलता है?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 14,
-    questionEn: 'Does your child look you in the eye when you are talking or playing?',
-    questionHi: 'क्या आपका बच्चा बात करते या खेलते वक्त आपकी आँखों में देखता है?',
-    isCritical: true,
+  QuestionnaireItem(
+    id: 'q14',
+    questionEn: 'Does your child look you in the eye when you are talking, playing, or dressing him/her?',
+    questionHi: 'क्या आपका बच्चा बात करते, खेलते या कपड़े पहनाते समय आपकी आँखों में देखता है?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 15,
-    questionEn: 'Does your child try to copy what you do?',
-    questionHi: 'क्या आपका बच्चा आपकी नकल करने की कोशिश करता है?',
-    isCritical: true,
+  QuestionnaireItem(
+    id: 'q15',
+    questionEn: 'Does your child try to copy what you do (e.g. wave bye-bye, clap, make a noise)?',
+    questionHi: 'क्या आपका बच्चा आपकी नकल करने की कोशिश करता है (जैसे बाय-बाय, तालियाँ)?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 16,
+  QuestionnaireItem(
+    id: 'q16',
     questionEn: 'If you turn your head to look at something, does your child look around to see what you are looking at?',
-    questionHi: 'अगर आप सिर घुमाकर कुछ देखें, तो क्या आपका बच्चा भी देखने की कोशिश करता है?',
+    questionHi: 'यदि आप किसी चीज़ को देखने के लिए सिर घुमाते हैं, तो क्या आपका बच्चा भी देखने की कोशिश करता है?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 17,
-    questionEn: 'Does your child try to get you to watch him/her?',
-    questionHi: 'क्या आपका बच्चा आपका ध्यान खुद पर लगाने की कोशिश करता है?',
+  QuestionnaireItem(
+    id: 'q17',
+    questionEn: 'Does your child try to get you to watch him/her (e.g. says "look" or looks at you for praise)?',
+    questionHi: 'क्या आपका बच्चा आपको अपनी ओर देखने के लिए प्रेरित करता है (जैसे "देखो" कहना)?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 18,
-    questionEn: 'Does your child understand when you tell him/her to do something?',
-    questionHi: 'क्या आपका बच्चा आपकी बात समझता है?',
+  QuestionnaireItem(
+    id: 'q18',
+    questionEn: 'Does your child understand when you tell him/her to do something (without pointing)?',
+    questionHi: 'क्या आपका बच्चा बिना इशारे के आपकी बात समझता है (जैसे "किताब रखो")?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 19,
-    questionEn: 'If something new happens, does your child look at your face to see how you feel about it?',
-    questionHi: 'कुछ नया होने पर क्या बच्चा आपका चेहरा देखता है?',
+  QuestionnaireItem(
+    id: 'q19',
+    questionEn: 'If something new happens, does your child look at your face to see how you feel?',
+    questionHi: 'यदि कुछ नया होता है, तो क्या आपका बच्चा आपके चेहरे की ओर देखता है कि आप कैसा महसूस कर रहे हैं?',
+    riskIfYes: false,
   ),
-  QuestionItem(
-    id: 20,
-    questionEn: 'Does your child like movement activities?',
-    questionHi: 'क्या आपका बच्चा गतिविधि वाले खेल पसंद करता है?',
+  QuestionnaireItem(
+    id: 'q20',
+    questionEn: 'Does your child like movement activities (e.g. being swung or bounced on your knee)?',
+    questionHi: 'क्या आपका बच्चा हलचल वाले खेल पसंद करता है (जैसे झुलाना या घुटनों पर उछालना)?',
+    riskIfYes: false,
   ),
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AIIMS INDT-ASD — 28 items — Malhotra et al., PLOS ONE 2019
-// DOI: 10.1371/journal.pone.0213242
-// 5-point Likert: 0=Never, 1=Rarely, 2=Sometimes, 3=Often, 4=Always
-// Cutoff: total score >= 36 (out of max 112) → ASD concern
+// INDT-ASD — 15 items, for children > 30 months
+// Simplified from the Indian Scale for Assessment of Autism (ISAA) DSM-5 criteria
 // ─────────────────────────────────────────────────────────────────────────────
-class LikertItem {
-  final int id;
-  final String domain;
-  final String questionEn;
-  final String questionHi;
+const List<QuestionnaireItem> indtAsdItems = [
+  QuestionnaireItem(
+    id: 'i1',
+    questionEn: 'Does the child make eye contact during play or conversation?',
+    questionHi: 'क्या बच्चा खेलते या बात करते समय आँख से संपर्क करता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i2',
+    questionEn: 'Does the child respond when called by name?',
+    questionHi: 'क्या बच्चा नाम पुकारने पर प्रतिक्रिया करता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i3',
+    questionEn: 'Does the child use words or short phrases to communicate needs?',
+    questionHi: 'क्या बच्चा अपनी ज़रूरतें बताने के लिए शब्दों या वाक्यांशों का उपयोग करता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i4',
+    questionEn: 'Does the child point to things they want?',
+    questionHi: 'क्या बच्चा जो चाहता है उस चीज़ की ओर इशारा करता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i5',
+    questionEn: 'Does the child show interest in playing with other children?',
+    questionHi: 'क्या बच्चा दूसरे बच्चों के साथ खेलने में रुचि दिखाता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i6',
+    questionEn: 'Does the child engage in pretend or imaginative play?',
+    questionHi: 'क्या बच्चा नाटकीय या कल्पनाशील खेल खेलता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i7',
+    questionEn: 'Does the child share objects or point to share experiences with others?',
+    questionHi: 'क्या बच्चा दूसरों के साथ अनुभव साझा करने के लिए चीज़ें दिखाता या इशारा करता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i8',
+    questionEn: 'Does the child repeat words or phrases out of context (echolalia)?',
+    questionHi: 'क्या बच्चा बिना संदर्भ के शब्द या वाक्यांश दोहराता है (इकोलालिया)?',
+    riskIfYes: true,
+  ),
+  QuestionnaireItem(
+    id: 'i9',
+    questionEn: 'Does the child show repetitive body movements (hand flapping, rocking, spinning)?',
+    questionHi: 'क्या बच्चा दोहराव वाली शारीरिक हरकतें करता है (हाथ हिलाना, झूलना, घूमना)?',
+    riskIfYes: true,
+  ),
+  QuestionnaireItem(
+    id: 'i10',
+    questionEn: 'Does the child get very upset when routines or arrangements are changed?',
+    questionHi: 'क्या बच्चा दिनचर्या या व्यवस्था बदलने पर बहुत परेशान हो जाता है?',
+    riskIfYes: true,
+  ),
+  QuestionnaireItem(
+    id: 'i11',
+    questionEn: 'Does the child have unusual reactions to sounds, textures, lights, or smells?',
+    questionHi: 'क्या बच्चे की आवाज़, बनावट, रोशनी या गंध के प्रति असामान्य प्रतिक्रिया है?',
+    riskIfYes: true,
+  ),
+  QuestionnaireItem(
+    id: 'i12',
+    questionEn: 'Does the child understand and follow simple two-step instructions?',
+    questionHi: 'क्या बच्चा दो-चरण के सरल निर्देशों को समझता और पालन करता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i13',
+    questionEn: 'Does the child smile in response to someone smiling at them?',
+    questionHi: 'क्या बच्चा किसी के मुस्कुराने पर वापस मुस्कुराता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i14',
+    questionEn: 'Does the child imitate actions shown by an adult?',
+    questionHi: 'क्या बच्चा किसी बड़े की हरकतों की नकल करता है?',
+    riskIfYes: false,
+  ),
+  QuestionnaireItem(
+    id: 'i15',
+    questionEn: 'Does the child strongly prefer playing alone over with others?',
+    questionHi: 'क्या बच्चा दूसरों के साथ खेलने की बजाय अकेले खेलना बहुत अधिक पसंद करता है?',
+    riskIfYes: true,
+  ),
+];
 
-  const LikertItem({
-    required this.id,
-    required this.domain,
-    required this.questionEn,
-    required this.questionHi,
-  });
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+
+int computeScore(List<QuestionnaireItem> items, Map<String, bool> answers) {
+  int score = 0;
+  for (final item in items) {
+    final answer = answers[item.id] ?? false;
+    if (item.riskIfYes && answer == true) score++;
+    if (!item.riskIfYes && answer == false) score++;
+  }
+  return score;
 }
 
-const List<LikertItem> indtAsdQuestions = [
-  // Domain 1: Social Reciprocity
-  LikertItem(id: 1, domain: 'social',
-    questionEn: 'Does not respond when his/her name is called',
-    questionHi: 'नाम पुकारने पर जवाब नहीं देता'),
-  LikertItem(id: 2, domain: 'social',
-    questionEn: 'Avoids eye contact during interaction',
-    questionHi: 'बातचीत के दौरान आँख से आँख मिलाने से बचता है'),
-  LikertItem(id: 3, domain: 'social',
-    questionEn: 'Does not share enjoyment by pointing or showing objects',
-    questionHi: 'चीज़ें दिखाकर या इशारे से खुशी साझा नहीं करता'),
-  LikertItem(id: 4, domain: 'social',
-    questionEn: 'Does not smile back when smiled at',
-    questionHi: 'मुस्कुराने पर मुस्कुराहट नहीं लौटाता'),
-  LikertItem(id: 5, domain: 'social',
-    questionEn: 'Does not show interest in other children',
-    questionHi: 'दूसरे बच्चों में रुचि नहीं दिखाता'),
-  LikertItem(id: 6, domain: 'social',
-    questionEn: 'Prefers to play alone rather than with others',
-    questionHi: 'दूसरों के साथ खेलने की बजाय अकेले खेलना पसंद करता है'),
-  LikertItem(id: 7, domain: 'social',
-    questionEn: 'Has difficulty understanding others\' feelings',
-    questionHi: 'दूसरों की भावनाएं समझने में कठिनाई होती है'),
-  // Domain 2: Communication
-  LikertItem(id: 8, domain: 'communication',
-    questionEn: 'Speech is delayed compared to peers',
-    questionHi: 'हमउम्र बच्चों की तुलना में बोलने में देरी है'),
-  LikertItem(id: 9, domain: 'communication',
-    questionEn: 'Repeats words or phrases said by others (echolalia)',
-    questionHi: 'दूसरों की बात दोहराता है (इकोलालिया)'),
-  LikertItem(id: 10, domain: 'communication',
-    questionEn: 'Confuses pronouns (uses "you" instead of "I")',
-    questionHi: '"मैं" की जगह "तुम" कहता है'),
-  LikertItem(id: 11, domain: 'communication',
-    questionEn: 'Has unusual or monotone voice quality',
-    questionHi: 'आवाज़ असामान्य या एक सुर वाली है'),
-  LikertItem(id: 12, domain: 'communication',
-    questionEn: 'Difficulty starting or maintaining conversation',
-    questionHi: 'बातचीत शुरू करने या जारी रखने में कठिनाई'),
-  LikertItem(id: 13, domain: 'communication',
-    questionEn: 'Takes language very literally',
-    questionHi: 'भाषा को बिल्कुल सीधे अर्थ में लेता है'),
-  LikertItem(id: 14, domain: 'communication',
-    questionEn: 'Uses unusual or idiosyncratic gestures',
-    questionHi: 'असामान्य या अजीब इशारे करता है'),
-  // Domain 3: Restricted Repetitive Behaviors
-  LikertItem(id: 15, domain: 'repetitive',
-    questionEn: 'Flaps hands when excited or upset',
-    questionHi: 'उत्साहित या परेशान होने पर हाथ फड़फड़ाता है'),
-  LikertItem(id: 16, domain: 'repetitive',
-    questionEn: 'Rocks body back and forth',
-    questionHi: 'शरीर को आगे-पीछे झुलाता है'),
-  LikertItem(id: 17, domain: 'repetitive',
-    questionEn: 'Spins objects or self repeatedly',
-    questionHi: 'वस्तुओं या खुद को बार-बार घुमाता है'),
-  LikertItem(id: 18, domain: 'repetitive',
-    questionEn: 'Insists on sameness, upset by small changes in routine',
-    questionHi: 'दिनचर्या में छोटे बदलाव से परेशान होता है'),
-  LikertItem(id: 19, domain: 'repetitive',
-    questionEn: 'Unusual attachment to specific objects',
-    questionHi: 'किसी खास वस्तु से असामान्य लगाव'),
-  LikertItem(id: 20, domain: 'repetitive',
-    questionEn: 'Has very narrow, intense interests',
-    questionHi: 'बहुत सीमित और गहरी रुचियाँ हैं'),
-  LikertItem(id: 21, domain: 'repetitive',
-    questionEn: 'May hurt self (head banging, biting, scratching)',
-    questionHi: 'खुद को नुकसान पहुँचा सकता है'),
-  // Domain 4: Sensory Processing
-  LikertItem(id: 22, domain: 'sensory',
-    questionEn: 'Overreacts or underreacts to sounds',
-    questionHi: 'आवाज़ों पर अधिक या कम प्रतिक्रिया करता है'),
-  LikertItem(id: 23, domain: 'sensory',
-    questionEn: 'Overreacts or underreacts to lights',
-    questionHi: 'रोशनी पर अधिक या कम प्रतिक्रिया करता है'),
-  LikertItem(id: 24, domain: 'sensory',
-    questionEn: 'Overreacts or underreacts to touch',
-    questionHi: 'स्पर्श पर अधिक या कम प्रतिक्रिया करता है'),
-  LikertItem(id: 25, domain: 'sensory',
-    questionEn: 'Unusual reactions to taste or smell',
-    questionHi: 'स्वाद या गंध पर असामान्य प्रतिक्रिया'),
-  LikertItem(id: 26, domain: 'sensory',
-    questionEn: 'Seems to have unusually high pain tolerance',
-    questionHi: 'दर्द बहुत कम महसूस करता लगता है'),
-  LikertItem(id: 27, domain: 'sensory',
-    questionEn: 'Unusual response to hot or cold temperature',
-    questionHi: 'गर्म या ठंडे तापमान पर असामान्य प्रतिक्रिया'),
-  LikertItem(id: 28, domain: 'sensory',
-    questionEn: 'Stereotyped or repetitive body movements',
-    questionHi: 'शरीर की बार-बार एक जैसी हरकतें'),
-];
-
-// Scoring helpers
-class QuestionnaireScorer {
-  // M-CHAT-R scoring (Robins et al. 2014)
-  static Map<String, dynamic> scoreMchatR(Map<int, bool> answers) {
-    int totalRisk = 0;
-    int criticalFails = 0;
-
-    for (final q in mchatRQuestions) {
-      final answer = answers[q.id];
-      if (answer == null) continue;
-
-      bool isAtypical;
-      if (q.invertScoring) {
-        isAtypical = answer == true; // YES = atypical
-      } else {
-        isAtypical = answer == false; // NO = atypical
-      }
-
-      if (isAtypical) {
-        totalRisk++;
-        if (q.isCritical) criticalFails++;
-      }
-    }
-
-    String riskLevel;
-    if (totalRisk <= 2) {
-      riskLevel = 'low';
-    } else if (totalRisk <= 7) {
-      riskLevel = 'medium';
-    } else {
-      riskLevel = 'high';
-    }
-
-    // Any critical item fail alone = medium risk minimum
-    if (criticalFails > 0 && riskLevel == 'low') {
-      riskLevel = 'medium';
-    }
-
-    // Normalised 0-1 risk score
-    final double normScore = totalRisk / 20.0;
-
-    return {
-      'total_score': totalRisk,
-      'critical_fails': criticalFails,
-      'risk_level': riskLevel,
-      'normalised_score': normScore,
-    };
-  }
-
-  // AIIMS INDT-ASD scoring (Malhotra et al. 2019)
-  // Cutoff >= 36 out of 112
-  static Map<String, dynamic> scoreIndtAsd(Map<int, int> answers) {
-    int total = 0;
-    for (final q in indtAsdQuestions) {
-      total += answers[q.id] ?? 0;
-    }
-
-    const int cutoff = 36;
-    const int maxScore = 112; // 28 × 4
-
-    final String riskLevel;
-    if (total < cutoff * 0.7) {
-      riskLevel = 'low';
-    } else if (total < cutoff) {
-      riskLevel = 'medium';
-    } else {
-      riskLevel = 'high';
-    }
-
-    return {
-      'total_score': total,
-      'cutoff': cutoff,
-      'exceeds_cutoff': total >= cutoff,
-      'risk_level': riskLevel,
-      'normalised_score': (total / maxScore).clamp(0.0, 1.0),
-    };
+/// Returns 'low', 'medium', or 'high'.
+String getRiskLevel(int score, {required bool isMchatR}) {
+  if (isMchatR) {
+    // M-CHAT-R cut-points: Robins et al. 2014
+    if (score <= 2) return 'low';
+    if (score <= 7) return 'medium';
+    return 'high';
+  } else {
+    // INDT-ASD simplified cut-points
+    if (score <= 3) return 'low';
+    if (score <= 8) return 'medium';
+    return 'high';
   }
 }

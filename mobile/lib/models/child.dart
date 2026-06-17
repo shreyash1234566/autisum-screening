@@ -1,15 +1,23 @@
 import 'package:json_annotation/json_annotation.dart';
+
 part 'child.g.dart';
 
-enum ChildGender { male, female, other }
+enum ChildGender {
+  @JsonValue('male')
+  male,
+  @JsonValue('female')
+  female,
+  @JsonValue('other')
+  other
+}
 
-@JsonSerializable()
+@JsonSerializable(fieldRename: FieldRename.snake)
 class Child {
   final String id;
   final String name;
-  final int ageMonths;        // stored in months for precision
+  final int ageMonths; // stored in months for precision
   final ChildGender gender;
-  final String language;      // 'en' or 'hi'
+  final String language; // 'en' or 'hi'
   final String? doctorId;
   final DateTime createdAt;
 
