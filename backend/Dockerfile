@@ -90,8 +90,22 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The final image contains zero build tools.
 COPY --from=builder /venv /venv
 
-# Download OpenFace models
-RUN /venv/bin/openface download
+# Download OpenFace models.
+#
+# CRITICAL: --output is set to /opt/weights, NOT the default './weights'
+# (relative to WORKDIR /app). Every weight path inside the openface-test
+# package is hardcoded as a relative './weights/...' string with no env
+# var or CLI override (confirmed against the actual package source:
+# openface/demo.py and the vendored Pytorch_Retinaface/models/retinaface.py
+# both do this). docker-compose.yml mounts ./backend:/app for dev hot-
+# reload, which REPLACES the entire /app directory at container start --
+# including anything baked into /app/weights during this build step. Since
+# the host's backend/ folder has no weights/ dir (the download only ever
+# happened inside the image), that bind mount silently erased the weights
+# at runtime. /opt is never touched by any volume mount, so it survives.
+# openface_service.py runs the detect-video subprocess with cwd="/opt" so
+# the hardcoded "./weights/..." lookups resolve to /opt/weights/... here.
+RUN /venv/bin/openface download --output /opt/weights
 
 
 # App source — overridden at dev time by volume mount (see docker-compose.yml).

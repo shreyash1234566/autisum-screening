@@ -60,7 +60,16 @@ def run_openface(video_path: Optional[str]) -> dict:
         try:
             logger.info(f"Executing OpenFace: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=600
+                cmd, capture_output=True, text=True, timeout=600,
+                # CRITICAL: openface-test hardcodes every weight path as a
+                # relative './weights/...' string (no override exists -- see
+                # Dockerfile comment above the `openface download` step for
+                # the full explanation). video_path and -o tmpdir above are
+                # both absolute, so changing cwd here is safe for them; it's
+                # only here to make the relative weight lookups resolve to
+                # /opt/weights instead of whatever uvicorn's cwd happens to
+                # be (/app, which the dev bind mount can wipe out).
+                cwd="/opt",
             )
             if result.returncode != 0:
                 logger.error(f"OpenFace failed with return code {result.returncode}")
