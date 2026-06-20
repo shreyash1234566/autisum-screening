@@ -2,6 +2,12 @@
 scoring_service.py
 Combines all behavioral + questionnaire signals into a final risk score.
 All weights and thresholds from cited research papers in scoring_thresholds.py
+
+FIX: run_full_scoring() previously took ONE openface_result + ONE
+asdmotion_result, from a single session-wide video. The app now records
+Tasks A/B/C as three separate clips, so this now takes a dict of results
+per task ({"task_a": {...}, "task_b": {...}, "task_c": {...}}) and combines
+them via frame/segment-weighted averaging rather than picking just one.
 """
 import logging
 from ml.scoring_thresholds import (
@@ -11,6 +17,8 @@ from ml.scoring_thresholds import (
 )
 
 logger = logging.getLogger(__name__)
+
+TASK_NAMES = ("task_a", "task_b", "task_c")
 
 
 def compute_gaze_ratio(gaze_task_a: list) -> float:
@@ -40,34 +48,87 @@ def compute_name_response_rate(name_trials: list) -> float:
     return responses / len(name_trials)
 
 
-def run_full_scoring(session_db, openface_result: dict, asdmotion_result: dict) -> dict:
+def _combine_expression_rate(openface_results: dict) -> float:
+    """
+    Frame-count-weighted average of expression_rate across whichever task
+    clips produced real (non-mock) OpenFace results. Clips with more
+    detected frames get proportionally more say, rather than a flat mean
+    across tasks of very different length/quality.
+    """
+    total_frames = 0
+    weighted_sum = 0.0
+    for task in TASK_NAMES:
+        result = openface_results.get(task, {}) or {}
+        if result.get("mock") is True:
+            continue
+        frames = result.get("total_frames", 0)
+        rate   = result.get("expression_rate", 0.0)
+        if frames > 0:
+            weighted_sum += rate * frames
+            total_frames += frames
+
+    return weighted_sum / total_frames if total_frames > 0 else 0.0
+
+
+def _combine_repetitive_score(asdmotion_results: dict) -> float:
+    """
+    Segment-count-weighted average of repetitive_score across whichever
+    task clips produced real (non-mock) MediaPipe-Pose results.
+
+    NOTE (research-backed): this score is informational only -- it is
+    deliberately NOT included in combined_risk()'s weights. Tasks A/B/C are
+    framed tight on the face for gaze accuracy, which is the wrong camera
+    distance for reliable hand-flapping/stereotypy detection (full-body
+    framing is required -- see Stenum et al. 2026, Developmental Science,
+    which reports only 70.2% accuracy / 31.8% F1 for OpenPose+LSTM
+    stereotypy classification even WITH proper full-body toddler footage).
+    Treat this value as a logged signal for future research, not a
+    clinical input.
+    """
+    total_segments = 0
+    weighted_sum = 0.0
+    for task in TASK_NAMES:
+        result = asdmotion_results.get(task, {}) or {}
+        if result.get("mock") is True:
+            continue
+        segments = result.get("total_segments", 0)
+        score    = result.get("repetitive_score", 0.0)
+        if segments > 0:
+            weighted_sum += score * segments
+            total_segments += segments
+
+    return weighted_sum / total_segments if total_segments > 0 else 0.0
+
+
+def run_full_scoring(session_db, openface_results: dict, asdmotion_results: dict) -> dict:
     """
     Master scoring function. Called after video analysis completes.
 
     session_db: SQLAlchemy Session ORM object with all fields populated
-    openface_result: dict from openface_service.run_openface()
-    asdmotion_result: dict from asdmotion_service.run_asdmotion()
+    openface_results: {"task_a": {...}, "task_b": {...}, "task_c": {...}}
+        each value is a dict from openface_service.run_openface()
+    asdmotion_results: same shape, from asdmotion_service.run_asdmotion()
 
     Returns complete risk assessment dict.
     """
-    # ── 1. Gaze (Task A) ─────────────────────────────────────────────────────
-    gaze_data   = session_db.gaze_task_a or []
+    # ── 1. Gaze (Task A, on-device data — independent of server-side video) ──
+    gaze_data    = session_db.gaze_task_a or []
     social_ratio = compute_gaze_ratio(gaze_data)
     gaze_risk    = score_gaze(social_ratio)
 
-    # ── 2. Name Response (Task B) ────────────────────────────────────────────
-    trials        = session_db.name_trials or []
-    name_rate     = compute_name_response_rate(trials)
-    name_risk     = score_name_response(name_rate)
+    # ── 2. Name Response (Task B, on-device data) ────────────────────────────
+    trials    = session_db.name_trials or []
+    name_rate = compute_name_response_rate(trials)
+    name_risk = score_name_response(name_rate)
 
-    # ── 3. Expression (OpenFace AUs) ─────────────────────────────────────────
-    expr_rate  = openface_result.get("expression_rate", 0.0)
-    expr_risk  = score_expression(expr_rate)
+    # ── 3. Expression (OpenFace AUs, combined across A/B/C clips) ────────────
+    expr_rate = _combine_expression_rate(openface_results)
+    expr_risk = score_expression(expr_rate)
 
-    # ── 4. Repetitive Movement (ASDMotion) ───────────────────────────────────
-    repetitive = asdmotion_result.get("repetitive_score", 0.0)
+    # ── 4. Repetitive Movement (MediaPipe Pose, combined — informational) ───
+    repetitive = _combine_repetitive_score(asdmotion_results)
 
-    # ── 5. Questionnaire ─────────────────────────────────────────────────────
+    # ── 5. Questionnaire ──────────────────────────────────────────────────────
     q_type  = session_db.questionnaire_type or "unknown"
     q_score = session_db.questionnaire_score or 0
 
@@ -76,9 +137,9 @@ def run_full_scoring(session_db, openface_result: dict, asdmotion_result: dict) 
     elif q_type == "indt_asd":
         q_norm = score_questionnaire_indt(q_score)
     else:
-        q_norm = 0.5   # unknown type — conservative neutral
+        q_norm = 0.5
 
-    # ── 6. Combined ──────────────────────────────────────────────────────────
+    # ── 6. Combined (weights exclude repetitive_score — see _combine_repetitive_score) ──
     result = combined_risk(
         q_norm=q_norm,
         gaze_risk=gaze_risk,

@@ -36,7 +36,20 @@ class Session(Base):
     id                   = Column(String, primary_key=True)
     child_id             = Column(String, ForeignKey("children.id"), nullable=False)
     started_at           = Column(DateTime, default=datetime.utcnow)
-    video_path           = Column(String, nullable=True)
+
+    # FIX: was a single video_path, which the app could only ever populate
+    # with one clip (previously always Task C's, since A/B were discarded
+    # client-side). The app now records Tasks A/B/C as separate clips
+    # (Task D is touch-only, no camera) — one path each, all optional since
+    # any individual recording can fail without invalidating the others.
+    video_task_a_path    = Column(String, nullable=True)
+    video_task_b_path    = Column(String, nullable=True)
+    video_task_c_path    = Column(String, nullable=True)
+
+    # Per-task OpenFace + movement-analysis breakdown, kept for transparency/
+    # debugging (e.g. dashboard "why was this flagged" drill-down). Shape:
+    #   {"task_a": {"openface": {...}, "asdmotion": {...}}, "task_b": {...}, ...}
+    per_task_video_analysis = Column(JSON, default=dict)
 
     # Raw behavioral data (JSON arrays)
     gaze_task_a          = Column(JSON, default=list)   # social preference
@@ -55,9 +68,20 @@ class Session(Base):
     # Behavioral scores (computed server-side)
     social_gaze_ratio    = Column(Float)       # Task A — Perochon 2023
     name_response_rate   = Column(Float)       # Task B — 0-1
-    expression_rate      = Column(Float)       # AU6+AU12 from OpenFace
+    expression_rate      = Column(Float)       # AU6+AU12 from OpenFace, frame-weighted across A/B/C
     blink_rate_bpm       = Column(Float)
-    repetitive_score     = Column(Float)       # ASDMotion output
+
+    # MediaPipe-Pose movement score, averaged across whichever task clips
+    # produced real (non-mock) results. NOT included in combined_risk_score
+    # (see scoring_thresholds.py weights — questionnaire/gaze/name/expression
+    # only). Tasks A/B/C are framed tight on the face for gaze accuracy,
+    # which research on video-based hand-flapping detection (e.g. Stenum
+    # et al. 2026, Developmental Science — OpenPose+LSTM on full-body
+    # toddler footage, 70.2% accuracy / 31.8% F1 even with proper framing)
+    # shows is the WRONG camera distance for reliable stereotypy detection.
+    # Logged for informational/research purposes only — do not present as
+    # a clinical signal without re-validating against full-body footage.
+    repetitive_score     = Column(Float)
 
     # Combined risk
     combined_risk_score  = Column(Float)       # 0-1
@@ -92,4 +116,12 @@ if engine.dialect.name == "postgresql":
     from sqlalchemy import text
     with engine.connect() as conn:
         conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS processing_note TEXT"))
+        # New per-task video columns (replacing the old single video_path).
+        # The old video_path column, if present from a prior deploy, is left
+        # in place unused rather than dropped -- harmless, and avoids a
+        # destructive migration on existing data.
+        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS video_task_a_path VARCHAR"))
+        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS video_task_b_path VARCHAR"))
+        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS video_task_c_path VARCHAR"))
+        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS per_task_video_analysis JSON DEFAULT '{}'"))
         conn.commit()
