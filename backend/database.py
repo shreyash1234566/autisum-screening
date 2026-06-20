@@ -1,9 +1,10 @@
 from sqlalchemy import (
     create_engine, Column, String, Integer, Float, Boolean,
-    DateTime, Text, JSON, ForeignKey
+    DateTime, Text, JSON, ForeignKey, Enum as SAEnum
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
+import enum
 from config import settings
 
 engine = create_engine(settings.DATABASE_URL, pool_pre_ping=True)
@@ -63,10 +64,11 @@ class Session(Base):
     risk_level           = Column(String(10))  # low | medium | high
     flagged              = Column(Boolean, default=False)
 
+    # Processing status
     processing_status    = Column(String(20), default="pending")
     # pending | processing | done | error | completed_fallback
-    processing_error     = Column(Text, nullable=True)
     processing_note      = Column(Text, nullable=True)
+    processing_error     = Column(Text, nullable=True)
 
     # Doctor judgment
     doctor_judgment      = Column(String(20), nullable=True)

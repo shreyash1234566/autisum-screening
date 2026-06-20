@@ -1,10 +1,28 @@
+# =============================================================================
+# AutiScreen — Docker Compose  (development stack, optimised)
+# Usage: docker compose up --build
+#
+# ASDMotion note:
+#   Real ASDMotion (OpenPose+MMAction2+GPU) is NOT used -- it cannot be
+#   built via docker-compose (see backend/Dockerfile + asdmotion_service.py).
+#   asdmotion_service.py runs a real MediaPipe Pose + FFT detector on CPU
+#   instead. No mock fallbacks are used for usable video.
+#
+# REACT_APP_API_URL note:
+#   This is a BUILD-TIME variable baked into the React JS bundle.
+#   The browser resolves it directly — it CANNOT be http://backend:8000
+#   (that's only reachable from inside the Docker network, not from the browser).
+#   http://localhost:8000 works because port 8000 is exposed on the host.
+# =============================================================================
+
 version: "3.9"
 
 services:
 
-  # PostgreSQL database
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
   db:
     image: postgres:15-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB:       autism_db
       POSTGRES_USER:     autism_user
@@ -19,34 +37,63 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s   # give Postgres time to initialise on first run
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
-  # FastAPI backend
+  # ── FastAPI backend ────────────────────────────────────────────────────────
   backend:
     build: ./backend
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL:      postgresql://autism_user:autism_pass@db:5432/autism_db
+      DATABASE_URL:       postgresql://autism_user:autism_pass@db:5432/autism_db
       VIDEO_STORAGE_PATH: /data/videos
-      OPENFACE_BIN:      /usr/local/bin/FeatureExtraction
-      ASDMOTION_PATH:    /opt/ASDMotion
+      OPENFACE_BIN:       openface                          # uses the python wrapper
+      ASDMOTION_PATH:     /opt/ASDMotion
     volumes:
       - videodata:/data/videos
-      - ./backend:/app
+      - ./backend:/app      # dev: hot-reload via source mount — remove for production
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test:
+        - "CMD"
+        - "python"
+        - "-c"
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s     # FastAPI + DB connection can take a moment
+    # --reload watches /app for changes (works because of the source volume above).
+    # For production: remove --reload and the ./backend:/app volume mount.
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
 
-  # React doctor dashboard
+  # ── React dashboard (nginx) ────────────────────────────────────────────────
   dashboard:
     build: ./dashboard
+    restart: unless-stopped
     ports:
       - "3000:80"
-    environment:
-      REACT_APP_API_URL: http://localhost:8000
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy   # wait for backend /health to pass before starting
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/nginx-health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: json-file
+      options: { max-size: "5m", max-file: "3" }
 
 volumes:
   pgdata:

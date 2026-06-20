@@ -1,0 +1,8 @@
+# ML dependency set validated in this repository on 2026-06-11
+# Install with: python3 -m pip install -r ml/requirements.txt
+
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.5.0
+joblib==1.4.2
+ucimlrepo==0.0.7

@@ -19,9 +19,10 @@ class ApiService {
 
   Future<Map<String, dynamic>> uploadSession({
     required SessionData session,
-    String? videoPath,
+    required String videoPath,
     void Function(int sent, int total)? onProgress,
   }) async {
+    // Build form fields — always include session JSON
     final fields = <String, dynamic>{
       'session_json': MultipartFile.fromString(
         jsonEncode(session.toJson()),
@@ -29,7 +30,9 @@ class ApiService {
       ),
     };
 
-    if (videoPath != null && videoPath.isNotEmpty) {
+    // Fix: guard empty path — MultipartFile.fromFile('') throws PathNotFoundException.
+    // Video is optional; analysis proceeds with questionnaire + gaze data alone.
+    if (videoPath.isNotEmpty) {
       fields['video'] = await MultipartFile.fromFile(
         videoPath,
         filename: 'session_video.mp4',

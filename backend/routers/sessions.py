@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import uuid
+from typing import Optional
 from fastapi import APIRouter, Depends, UploadFile, File, BackgroundTasks, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime
@@ -27,6 +28,7 @@ async def upload_session(
     data = json.loads(raw)
 
     session_id = data.get("session_id") or str(uuid.uuid4())
+
     import re
     if not re.match(r"^[a-zA-Z0-9_\-]+$", session_id):
         raise HTTPException(status_code=400, detail="Invalid session_id format")
@@ -102,7 +104,7 @@ async def upload_session(
     return {"session_id": session_id, "status": "accepted"}
 
 
-def _process_session(session_id: str, video_path: str | None):
+def _process_session(session_id: str, video_path: Optional[str]):
     """Background task: OpenFace + ASDMotion + scoring."""
     from database import SessionLocal
     db = SessionLocal()
@@ -119,18 +121,18 @@ def _process_session(session_id: str, video_path: str | None):
         if not video_path or not os.path.exists(video_path):
             video_missing_or_unreadable = True
 
-        # OpenFace
+        # OpenFace — REPO's version handles None/missing path via mock fallback
         openface_result = run_openface(video_path)
         openface_result = openface_result or {}
 
-        # ASDMotion
+        # ASDMotion — same: handles None/missing path via mock fallback
         asdmotion_result = run_asdmotion(video_path)
         asdmotion_result = asdmotion_result or {}
 
         # Scoring
         scores = run_full_scoring(session, openface_result, asdmotion_result)
 
-        # Write back
+        # Write back behavioral scores
         session.social_gaze_ratio   = scores["social_gaze_ratio"]
         session.name_response_rate  = scores["name_response_rate"]
         session.expression_rate     = scores["expression_rate"]
@@ -140,24 +142,18 @@ def _process_session(session_id: str, video_path: str | None):
         session.risk_level          = scores["risk_level"]
         session.flagged             = scores["flagged"]
 
-        # Fallback evaluation
-        is_fallback = (
-            video_missing_or_unreadable
-            or openface_result.get("mock") is True
-            or asdmotion_result.get("mock") is True
-        )
+        # Enforce real analysis (no fallback allowed)
+        if video_missing_or_unreadable:
+            raise RuntimeError("Video file is missing or unreadable")
+        
+        if openface_result.get("mock") is True:
+            raise RuntimeError("OpenFace returned mock results")
+            
+        if asdmotion_result.get("mock") is True:
+            raise RuntimeError("ASDMotion returned mock results")
 
-        if is_fallback:
-            session.processing_status = "completed_fallback"
-            session.processing_note = (
-                "Fallback processing used. Reason: "
-                f"Video missing/unreadable={video_missing_or_unreadable}, "
-                f"OpenFace mock={openface_result.get('mock') is True}, "
-                f"ASDMotion mock={asdmotion_result.get('mock') is True}."
-            )
-        else:
-            session.processing_status = "done"
-            session.processing_note = "Real video analysis completed successfully."
+        session.processing_status = "completed"
+        session.processing_note = "Real video analysis completed successfully."
 
         session.processing_error = None
         db.commit()
@@ -168,8 +164,8 @@ def _process_session(session_id: str, video_path: str | None):
         session = db.query(SessionModel).filter(SessionModel.id == session_id).first()
         if session:
             session.processing_status = "error"
-            session.processing_error = str(e)[:500]
-            session.processing_note = "An unrecoverable execution error occurred."
+            session.processing_error  = str(e)[:500]
+            session.processing_note   = "An unrecoverable execution error occurred."
             db.commit()
     finally:
         db.close()
@@ -181,10 +177,13 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
     if not s:
         raise HTTPException(404, "Session not found")
     return {
-        "id": s.id, "child_id": s.child_id,
-        "processing_status": s.processing_status,
-        "risk_level": s.risk_level,
-        "flagged": s.flagged,
+        "id":                  s.id,
+        "child_id":            s.child_id,
+        "processing_status":   s.processing_status,
+        "processing_note":     s.processing_note,
+        "processing_error":    s.processing_error,
+        "risk_level":          s.risk_level,
+        "flagged":             s.flagged,
         "combined_risk_score": s.combined_risk_score,
         "social_gaze_ratio":   s.social_gaze_ratio,
         "name_response_rate":  s.name_response_rate,
@@ -192,6 +191,4 @@ def get_session(session_id: str, db: Session = Depends(get_db)):
         "questionnaire_score": s.questionnaire_score,
         "questionnaire_type":  s.questionnaire_type,
         "questionnaire_risk":  s.questionnaire_risk,
-        "processing_note":     s.processing_note,
-        "processing_error":    s.processing_error,
     }

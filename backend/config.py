@@ -8,7 +8,7 @@ class Settings(BaseSettings):
     S3_ENDPOINT: str = ""  # leave empty for AWS, set for MinIO
     AWS_ACCESS_KEY: str = ""
     AWS_SECRET_KEY: str = ""
-    OPENFACE_BIN: str = "/usr/local/bin/FeatureExtraction"
+    OPENFACE_BIN: str = "openface"
     ASDMOTION_PATH: str = "/opt/ASDMotion"
     MODEL_PATH: str = "/app/ml/questionnaire_model.pkl"
     DEBUG: bool = False

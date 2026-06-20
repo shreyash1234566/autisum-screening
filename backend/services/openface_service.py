@@ -35,73 +35,114 @@ def run_openface(video_path: Optional[str]) -> dict:
         return _mock_openface_result()
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        # OpenFace 3.0 (openface-test) CLI: openface detect-video <video> -o <out_dir> -d <device>
+        # The '-f' flag is NOT supported in this version (fixed in a prior commit).
+        #
+        # CRITICAL: '--device/-d' defaults to 'cuda' at the click-option level
+        # (see openface/cli.py). This container ships CPU-only torch
+        # (torch==2.3.1+cpu, chosen deliberately to avoid Codespaces disk
+        # exhaustion from CUDA wheels). Omitting '-d cpu' causes a hard crash:
+        #   FaceDetector.__init__ -> model.to('cuda') raises
+        #   "AssertionError: Torch not compiled with CUDA enabled"
+        # and even on a CUDA-capable build, LandmarkDetector.__init__ raises
+        #   "ValueError: When using 'cuda', provide at least one valid device ID"
+        # because its default device_ids=[-1] is invalid. So 'cpu' is the only
+        # device value that actually works against this package, regardless
+        # of whether a GPU is present.
         cmd = [
             settings.OPENFACE_BIN,
-            "-f", video_path,
-            "-out_dir", tmpdir,
-            "-aus",           # action units
-            "-pose",          # head pose
-            "-gaze",          # gaze vectors
-            "-2Dfp",          # 2D facial landmarks
-            "-quiet",
+            "detect-video",
+            video_path,
+            "-o", tmpdir,
+            "-d", "cpu",
         ]
 
         try:
+            logger.info(f"Executing OpenFace: {' '.join(cmd)}")
             result = subprocess.run(
-                cmd, capture_output=True, text=True, timeout=300
+                cmd, capture_output=True, text=True, timeout=600
             )
             if result.returncode != 0:
-                logger.error(f"OpenFace error: {result.stderr}")
-                return _mock_openface_result()
+                logger.error(f"OpenFace failed with return code {result.returncode}")
+                logger.error(f"Stderr: {result.stderr}")
+                raise RuntimeError(f"OpenFace error: {result.stderr}")
         except subprocess.TimeoutExpired:
-            logger.error("OpenFace timed out (>5 min)")
-            return _mock_openface_result()
+            raise RuntimeError("OpenFace timed out (>10 min)")
         except FileNotFoundError:
-            logger.warning(
+            raise RuntimeError(
                 "OpenFace binary not found. "
                 "Install: pip install openface-test && openface download"
             )
-            return _mock_openface_result()
 
-        # Find output CSV
-        csv_files = list(Path(tmpdir).glob("*.csv"))
-        if not csv_files:
-            logger.error("OpenFace produced no CSV output")
-            return _mock_openface_result()
+        # Find output file. OpenFace 3.0 generates .tsv files.
+        # The filename is usually based on the input video name.
+        tsv_files = list(Path(tmpdir).glob("*.tsv"))
+        if not tsv_files:
+            # Fallback check for CSV just in case
+            csv_files = list(Path(tmpdir).glob("*.csv"))
+            if not csv_files:
+                logger.error(f"No output files found in {tmpdir}. Files: {os.listdir(tmpdir)}")
+                raise RuntimeError("OpenFace produced no output (TSV/CSV)")
+            return _parse_openface_output(str(csv_files[0]), delimiter=',')
+        
+        return _parse_openface_output(str(tsv_files[0]), delimiter='\t')
 
-        return _parse_openface_csv(str(csv_files[0]))
 
-
-def _parse_openface_csv(csv_path: str) -> dict:
+def _parse_openface_output(file_path: str, delimiter: str = '\t') -> dict:
     """
-    Parse OpenFace output CSV.
-    Key columns: AU06_r, AU12_r (intensity), pose_Rx/Ry/Rz, gaze_angle_x/y
+    Parse OpenFace output file (TSV or CSV).
+    OpenFace 3.0 TSV Columns:
+    timestamp, image_path, face_id, face_detection, landmarks, emotion, gaze_yaw, gaze_pitch, action_units
+    
+    action_units is a string like: "[0.1, 0.2, ...]"
+    We need to map these to specific AUs if possible, or use the indices.
+    According to OpenFace 3.0 docs/code, AU intensities are in action_units.
     """
     frames = []
-    with open(csv_path, newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            # Only process frames with high confidence
-            confidence = float(row.get("confidence", 0))
-            if confidence < 0.8:
-                continue
+    try:
+        with open(file_path, newline="") as f:
+            reader = csv.DictReader(f, delimiter=delimiter)
+            for i, row in enumerate(reader):
+                # OpenFace 3.0 might not have 'confidence' per frame in the same way
+                # but 'face_detection' contains [x1, y1, x2, y2, score]
+                try:
+                    det_str = row.get("face_detection", "[]")
+                    det = eval(det_str) if det_str.startswith('[') else []
+                    confidence = det[4] if len(det) > 4 else 1.0
+                except:
+                    confidence = 1.0
 
-            au6  = float(row.get("AU06_r", 0))
-            au12 = float(row.get("AU12_r", 0))
+                if confidence < 0.5: # Lower threshold for 3.0 if needed
+                    continue
 
-            frames.append({
-                "frame":       int(row.get("frame", 0)),
-                "timestamp_s": float(row.get("timestamp", 0)),
-                "confidence":  confidence,
-                "au6":         au6,
-                "au12":        au12,
-                # AU6 > 1.0 AND AU12 > 1.5 = genuine smile (FACS criteria)
-                "smile":       (au6 > 1.0 and au12 > 1.5),
-                "head_yaw":    float(row.get("pose_Ry", 0)),
-                "head_pitch":  float(row.get("pose_Rx", 0)),
-                "gaze_x":      float(row.get("gaze_angle_x", 0)),
-                "gaze_y":      float(row.get("gaze_angle_y", 0)),
-            })
+                # Parse action units
+                # OpenFace 3.0 AU mapping (typical):
+                # 0:AU1, 1:AU2, 2:AU4, 3:AU6, 4:AU7, 5:AU10, 6:AU12, 7:AU14, 8:AU15, 9:AU17, 10:AU20, 11:AU23, 12:AU24
+                try:
+                    au_str = row.get("action_units", "[]")
+                    aus = eval(au_str) if au_str.startswith('[') else []
+                    # AU6 is index 3, AU12 is index 6
+                    au6 = float(aus[3]) if len(aus) > 3 else 0.0
+                    au12 = float(aus[6]) if len(aus) > 6 else 0.0
+                except:
+                    au6 = 0.0
+                    au12 = 0.0
+
+                frames.append({
+                    "frame":       i,
+                    "timestamp_s": float(row.get("timestamp", i/30.0)),
+                    "confidence":  confidence,
+                    "au6":         au6,
+                    "au12":        au12,
+                    "smile":       (au6 > 1.0 and au12 > 1.5),
+                    "head_yaw":    float(row.get("gaze_yaw", 0)),
+                    "head_pitch":  float(row.get("gaze_pitch", 0)),
+                    "gaze_x":      float(row.get("gaze_yaw", 0)),
+                    "gaze_y":      float(row.get("gaze_pitch", 0)),
+                })
+    except Exception as e:
+        logger.error(f"Error parsing OpenFace output: {e}")
+        raise RuntimeError(f"Failed to parse OpenFace output: {e}")
 
     if not frames:
         return {

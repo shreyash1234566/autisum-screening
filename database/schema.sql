@@ -54,8 +54,8 @@ CREATE TABLE IF NOT EXISTS sessions (
 
     -- Processing pipeline
     processing_status     VARCHAR(20) DEFAULT 'pending',
-    processing_error      TEXT,
     processing_note       TEXT,
+    processing_error      TEXT,
 
     -- Doctor judgment (becomes training label)
     doctor_judgment       VARCHAR(30),

@@ -1,0 +1,15 @@
+# Never bake node_modules or previous builds into the image
+node_modules/
+build/
+
+# Secrets
+.env
+.env.*
+*.env
+
+# Dev / repo noise
+.git/
+.gitignore
+*.md
+coverage/
+.eslintcache

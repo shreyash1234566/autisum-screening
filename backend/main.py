@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import logging
 
-from routers import children, sessions, doctor
+from routers import children, sessions, doctor, ml_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -29,6 +29,7 @@ app.add_middleware(
 app.include_router(children.router)
 app.include_router(sessions.router)
 app.include_router(doctor.router)
+app.include_router(ml_router.router)
 
 @app.get("/health")
 def health():
