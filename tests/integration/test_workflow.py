@@ -103,7 +103,11 @@ def test_full_patient_workflow(api_client):
 
     files = {
         "session_json": ("session.json", io_bytes(json_dumps(session_json)), "application/json"),
-        "video": ("video.mp4", io_bytes(b"mock video data"), "video/mp4")
+        # FIX: was a single "video" field. The backend now accepts
+        # video_task_a/b/c (Tasks A/B/C each record their own clip; Task D
+        # is touch-only). Using video_task_a here exercises the real upload
+        # path instead of silently uploading to a field FastAPI ignores.
+        "video_task_a": ("video.mp4", io_bytes(b"mock video data"), "video/mp4")
     }
 
     r = api_client.post("/sessions/upload", files=files)
@@ -118,11 +122,18 @@ def test_full_patient_workflow(api_client):
         assert r.status_code == 200
         res = r.json()
         status = res.get("processing_status")
-        if status in ("done", "completed_fallback", "error"):
+        if status in ("completed", "error"):
             break
         time.sleep(1)
 
-    assert status in ("done", "completed_fallback"), f"Session processing failed or timed out. Last status: {status}"
+    # FIX: "done"/"completed_fallback" never existed as real values set by
+    # routers/sessions.py -- the only success status it ever set is
+    # "completed" (with processing_note explaining any missing/mock video
+    # data). "mock video data" isn't a real MP4, so OpenFace/the pose
+    # detector will both gracefully fall back for task_a -- that's fine,
+    # since this assertion only cares that the session finished, not that
+    # video analysis succeeded.
+    assert status == "completed", f"Session processing failed or timed out. Last status: {status}"
     
     # Assert values calculated inside run_full_scoring
     assert res["risk_level"] == "high"

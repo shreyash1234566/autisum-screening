@@ -81,7 +81,9 @@ def run_asdmotion(video_path: Optional[str]) -> dict:
     if not cap.isOpened():
         logger.warning(f"Cannot open video for ASDMotion analysis: {video_path}")
         cap.release()
-        return _mock_asdmotion()
+        ret = _mock_asdmotion()
+        ret["error"] = "video_unreadable"
+        return ret
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))

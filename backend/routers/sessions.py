@@ -145,6 +145,11 @@ def _process_session(session_id: str, video_paths: dict):
         session.processing_status = "processing"
         db.commit()
 
+        # Defensive: a caller passing None (e.g. "no video info available at
+        # all") should degrade to "every task missing", not crash before we
+        # even get a chance to record that as a processing_note.
+        video_paths = video_paths or {}
+
         per_task_analysis = {}
         openface_results  = {}
         asdmotion_results = {}

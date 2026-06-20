@@ -65,14 +65,29 @@ def run_openface(video_path: Optional[str]) -> dict:
             if result.returncode != 0:
                 logger.error(f"OpenFace failed with return code {result.returncode}")
                 logger.error(f"Stderr: {result.stderr}")
-                raise RuntimeError(f"OpenFace error: {result.stderr}")
+                ret = _mock_openface_result()
+                ret["error"] = f"openface_nonzero_exit: {result.stderr[:200]}"
+                return ret
         except subprocess.TimeoutExpired:
-            raise RuntimeError("OpenFace timed out (>10 min)")
+            logger.error("OpenFace timed out (>10 min)")
+            ret = _mock_openface_result()
+            ret["error"] = "timeout"
+            return ret
         except FileNotFoundError:
-            raise RuntimeError(
+            # FIX: this used to `raise RuntimeError(...)`, which propagated
+            # all the way out of run_openface and crashed the background
+            # task instead of letting it degrade gracefully like every other
+            # "video unusable" case. A missing binary/package is an
+            # infrastructure problem, not a reason to lose the rest of the
+            # session's scoring (gaze/name-response/questionnaire don't need
+            # video at all -- see scoring_service.py).
+            logger.error(
                 "OpenFace binary not found. "
                 "Install: pip install openface-test && openface download"
             )
+            ret = _mock_openface_result()
+            ret["error"] = "openface_binary_not_found"
+            return ret
 
         # Find output file. OpenFace 3.0 generates .tsv files.
         # The filename is usually based on the input video name.
@@ -82,7 +97,9 @@ def run_openface(video_path: Optional[str]) -> dict:
             csv_files = list(Path(tmpdir).glob("*.csv"))
             if not csv_files:
                 logger.error(f"No output files found in {tmpdir}. Files: {os.listdir(tmpdir)}")
-                raise RuntimeError("OpenFace produced no output (TSV/CSV)")
+                ret = _mock_openface_result()
+                ret["error"] = "no_output_file"
+                return ret
             return _parse_openface_output(str(csv_files[0]), delimiter=',')
         
         return _parse_openface_output(str(tsv_files[0]), delimiter='\t')
@@ -112,7 +129,7 @@ def _parse_openface_output(file_path: str, delimiter: str = '\t') -> dict:
                 except:
                     confidence = 1.0
 
-                if confidence < 0.5: # Lower threshold for 3.0 if needed
+                if confidence < 0.8: # Reject low-confidence face detections
                     continue
 
                 # Parse action units
@@ -142,7 +159,9 @@ def _parse_openface_output(file_path: str, delimiter: str = '\t') -> dict:
                 })
     except Exception as e:
         logger.error(f"Error parsing OpenFace output: {e}")
-        raise RuntimeError(f"Failed to parse OpenFace output: {e}")
+        ret = _mock_openface_result()
+        ret["error"] = f"parse_failure: {str(e)[:200]}"
+        return ret
 
     if not frames:
         return {

@@ -150,31 +150,50 @@ def test_upload_session_invalid_timestamp(client, db_session):
 
 
 def test_process_session_fallback_missing_video(db_session):
-    """Test background processing handles missing video by running fallbacks and setting completed_fallback."""
+    """
+    Test background processing handles missing video gracefully.
+
+    FIX: this used to construct SessionModel(video_path=...) and call
+    _process_session(session_id, "<single path string>") -- both part of
+    the old single-video API. The app now records three separate clips
+    (Task A/B/C), so SessionModel takes video_task_a/b/c_path, and
+    _process_session takes a dict of {"task_a": path, ...}.
+
+    FIX: also updated the expected outcome. There never was a real
+    "completed_fallback" code path in routers/sessions.py (that string only
+    ever existed in a stale comment in database.py) -- a missing/unreadable
+    video has always meant "completed", with the gap explained in
+    processing_note. Gaze ratio, name-response rate, and questionnaire score
+    are 90% of the combined-risk weight and come entirely from on-device
+    data already in the session JSON, so they don't depend on video at all
+    -- only the 10%-weighted expression_rate does.
+    """
     from routers.sessions import _process_session
-    
+
     child = Child(id="child-test-123", name="Priya Patel", age_months=24, gender="female", language="en")
     db_session.add(child)
-    
+
     sess = SessionModel(
         id="session-test-fallback",
         child_id="child-test-123",
         processing_status="pending",
-        video_path="/nonexistent/path/to/video.mp4"
+        video_task_a_path="/nonexistent/path/to/video.mp4",
     )
     db_session.add(sess)
     db_session.commit()
 
     with patch("database.SessionLocal", return_value=db_session):
-        _process_session("session-test-fallback", "/nonexistent/path/to/video.mp4")
+        _process_session(
+            "session-test-fallback",
+            {"task_a": "/nonexistent/path/to/video.mp4", "task_b": None, "task_c": None},
+        )
 
     # Refresh DB session state
     db_session.expire_all()
     sess_db = db_session.query(SessionModel).filter(SessionModel.id == "session-test-fallback").first()
-    
-    assert sess_db.processing_status == "completed_fallback"
-    assert "Fallback processing used" in sess_db.processing_note
-    assert "Video missing/unreadable=True" in sess_db.processing_note
+
+    assert sess_db.processing_status == "completed"
+    assert "No video for: task_a, task_b, task_c" in sess_db.processing_note
     assert sess_db.processing_error is None
     assert sess_db.expression_rate == 0.0
     assert sess_db.repetitive_score == 0.0
@@ -194,7 +213,19 @@ def test_openface_fallback_mock(client, db_session):
 
 
 def test_openface_parser_success(client):
-    """Test that openface_service correctly parses a simulated CSV file output."""
+    """
+    Test that openface_service correctly parses a simulated CSV file output.
+
+    FIX: the test CSV previously used flat columns (confidence, AU06_r,
+    AU12_r, gaze_angle_x/y) that don't match what `openface detect-video`
+    actually produces. The real output (openface-test package, demo.py
+    process_video()) writes `face_detection` as a stringified
+    [x1, y1, x2, y2, score] list and `action_units` as a stringified list of
+    AU intensities -- there are no flat per-AU columns. _parse_openface_output
+    parses exactly that real shape (see its docstring), so the test now
+    constructs CSV rows in the real format instead of inventing one that
+    never existed in production.
+    """
     from services.openface_service import run_openface
     import tempfile
     import os
@@ -206,29 +237,29 @@ def test_openface_parser_success(client):
     with patch("subprocess.run", return_value=mock_run), \
          patch("os.path.exists", return_value=True), \
          patch("tempfile.TemporaryDirectory") as mock_tmp:
-        
+
         # Setup fake temporary directory and output CSV file
         temp_dir = tempfile.mkdtemp()
         mock_tmp.return_value.__enter__.return_value = temp_dir
-        
+
         csv_path = os.path.join(temp_dir, "features.csv")
         with open(csv_path, "w") as f:
-            f.write("frame,timestamp,confidence,AU06_r,AU12_r,pose_Rx,pose_Ry,gaze_angle_x,gaze_angle_y\n")
-            # Frame 1: high confidence, genuine smile (AU6=1.2, AU12=1.8)
-            f.write("1,0.033,0.9,1.2,1.8,0.1,0.2,-0.05,0.04\n")
-            # Frame 2: low confidence (<0.8), should be skipped
-            f.write("2,0.066,0.5,1.5,2.0,0.1,0.2,-0.05,0.04\n")
-            # Frame 3: high confidence, no smile (AU6=0.2, AU12=0.4)
-            f.write("3,0.100,0.85,0.2,0.4,0.1,0.2,-0.05,0.04\n")
+            f.write("timestamp,face_detection,action_units,gaze_yaw,gaze_pitch\n")
+            # Frame 1: confidence 0.9 (>=0.8, kept), genuine smile: AU6=1.2 (idx3), AU12=1.8 (idx6)
+            f.write('0.033,"[10,10,50,50,0.9]","[0,0,0,1.2,0,0,1.8]",-0.05,0.04\n')
+            # Frame 2: confidence 0.5 (<0.8, should be skipped)
+            f.write('0.066,"[10,10,50,50,0.5]","[0,0,0,1.5,0,0,2.0]",-0.05,0.04\n')
+            # Frame 3: confidence 0.85 (>=0.8, kept), no smile: AU6=0.2, AU12=0.4
+            f.write('0.100,"[10,10,50,50,0.85]","[0,0,0,0.2,0,0,0.4]",-0.05,0.04\n')
 
         result = run_openface("/tmp/test_video.mp4")
         assert result is not None
-        assert result["total_frames"] == 2  # 1 and 3
-        assert result["smile_frames"] == 1  # 1
+        assert result["total_frames"] == 2  # frame 1 and frame 3 (frame 2's confidence < 0.8)
+        assert result["smile_frames"] == 1  # frame 1 only
         assert result["expression_rate"] == 0.5  # 1 out of 2 frames
         assert result["mean_au6"] == 0.7  # (1.2 + 0.2) / 2
         assert result["mean_au12"] == 1.1  # (1.8 + 0.4) / 2
-        
+
         # Clean up temp files
         try:
             os.remove(csv_path)
@@ -332,27 +363,35 @@ def test_upload_session_indt_asd(client, db_session):
 
 
 def test_video_service(tmp_path):
-    """Test video_service save, path, and exists functions."""
+    """
+    Test video_service save, path, and exists functions.
+
+    FIX: save_video/get_video_path/video_exists now take a required `task`
+    parameter (one of task_a/task_b/task_c), since each session can have up
+    to three separate clips instead of one.
+    """
     from services.video_service import save_video, get_video_path, video_exists
     from config import settings
-    
+
     # Temporarily override video storage path
     original_path = settings.VIDEO_STORAGE_PATH
     settings.VIDEO_STORAGE_PATH = str(tmp_path)
-    
+
     try:
         session_id = "test-video-sess-123"
         dummy_bytes = b"dummy video bytes payload"
-        
-        path = save_video(dummy_bytes, session_id)
-        assert video_exists(session_id) is True
-        assert get_video_path(session_id) == path
-        
+
+        path = save_video(dummy_bytes, session_id, "task_a")
+        assert video_exists(session_id, "task_a") is True
+        assert get_video_path(session_id, "task_a") == path
+
         # Read back bytes
         with open(path, "rb") as f:
             assert f.read() == dummy_bytes
-            
-        assert video_exists("nonexistent-session") is False
+
+        # Other tasks for this session haven't been saved
+        assert video_exists(session_id, "task_b") is False
+        assert video_exists("nonexistent-session", "task_a") is False
     finally:
         settings.VIDEO_STORAGE_PATH = original_path
 
@@ -408,10 +447,18 @@ def test_scoring_service_normal(db_session):
     db_session.add(sess)
     db_session.commit()
     
+    # FIX: run_full_scoring now takes a dict of per-task results
+    # ({"task_a": {...}, "task_b": {...}, "task_c": {...}}), not one flat
+    # dict, since the app records three separate clips. total_frames/
+    # total_segments must be present and > 0 for a task's result to be
+    # picked up by the frame/segment-weighted average in scoring_service.py
+    # -- a dict with no frame/segment count is treated as having no usable
+    # data for that task (matches what a real openface/asdmotion result
+    # always includes).
     scores = run_full_scoring(
         sess,
-        {"expression_rate": 0.2},
-        {"repetitive_score": 0.1}
+        {"task_a": {"total_frames": 10, "expression_rate": 0.2}},
+        {"task_a": {"total_segments": 5, "repetitive_score": 0.1}},
     )
     assert scores["repetitive_score"] == 0.1
     assert scores["expression_rate"] == 0.2
@@ -448,40 +495,65 @@ def test_process_session_exception_handling(db_session):
 
 
 def test_asdmotion_service_errors():
-    """Test run_asdmotion with subprocess failure, timeout, and JSON parse failures."""
+    """
+    Test run_asdmotion's failure/fallback paths.
+
+    FIX: this used to mock subprocess.run and inspect its stderr/returncode/
+    stdout, testing a design (call out to a separate ASDMotion process,
+    parse its JSON stdout) that was replaced -- the real ASDMotion repo
+    needs OpenPose + MMAction2 + GPU + Google-Drive-only weights, none of
+    which docker-compose build can produce (see asdmotion_service.py's
+    module docstring for the full audit). The actual implementation runs
+    MediaPipe Pose in-process via cv2.VideoCapture; there is no subprocess
+    at all, so these tests now mock cv2/os.path.exists instead.
+    """
     from services.asdmotion_service import run_asdmotion
-    import subprocess
-    
-    # 1. Subprocess failure (non-zero exit code)
-    mock_run = MagicMock()
-    mock_run.returncode = 1
-    mock_run.stderr = "Process crashed"
-    
+
+    # 1. Path doesn't exist at all -> mock with video_not_found
+    res = run_asdmotion("/tmp/does_not_exist.mp4")
+    assert res.get("mock") is True
+    assert res.get("error") == "video_not_found"
+    assert res.get("repetitive_score") == 0.0
+
+    # 2. Path exists but cv2 can't open it (corrupt/unreadable file)
     with patch("os.path.exists", return_value=True), \
-         patch("subprocess.run", return_value=mock_run):
-        res = run_asdmotion("/tmp/dummy.mp4")
+         patch("cv2.VideoCapture") as mock_cap_cls:
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = False
+        mock_cap_cls.return_value = mock_cap
+
+        res = run_asdmotion("/tmp/corrupt.mp4")
         assert res.get("mock") is True
-        assert res.get("error") == "Process crashed"
+        assert res.get("error") == "video_unreadable"
         assert res.get("repetitive_score") == 0.0
 
-    # 2. Timeout
+    # 3. Video opens but is too short for one analysis window (150 frames)
+    import cv2 as real_cv2
     with patch("os.path.exists", return_value=True), \
-         patch("subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="python", timeout=600)):
-        res = run_asdmotion("/tmp/dummy.mp4")
-        assert res.get("mock") is True
-        assert res.get("error") == "timeout"
+         patch("cv2.VideoCapture") as mock_cap_cls:
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = True
+        mock_cap.get.side_effect = lambda prop: 30.0 if prop == real_cv2.CAP_PROP_FPS else 50
+        mock_cap_cls.return_value = mock_cap
+
+        res = run_asdmotion("/tmp/too_short.mp4")
+        assert res.get("mock") is None  # not a mock result -- a real "too short" result
+        assert res.get("note") == "video_too_short"
         assert res.get("repetitive_score") == 0.0
 
-    # 3. JSON Decode Error
-    mock_run_ok = MagicMock()
-    mock_run_ok.returncode = 0
-    mock_run_ok.stdout = "invalid json string"
+    # 4. mediapipe not installed -> ImportError caught, falls back to mock
     with patch("os.path.exists", return_value=True), \
-         patch("subprocess.run", return_value=mock_run_ok):
-        res = run_asdmotion("/tmp/dummy.mp4")
-        assert res.get("mock") is True
-        assert "json_parse" in res.get("error")
-        assert res.get("repetitive_score") == 0.0
+         patch("cv2.VideoCapture") as mock_cap_cls:
+        mock_cap = MagicMock()
+        mock_cap.isOpened.return_value = True
+        # CAP_PROP_FPS=30.0, CAP_PROP_FRAME_COUNT=200 (enough for one window)
+        mock_cap.get.side_effect = lambda prop: 30.0 if prop == real_cv2.CAP_PROP_FPS else 200
+        mock_cap_cls.return_value = mock_cap
+
+        with patch.dict("sys.modules", {"mediapipe": None}):
+            res = run_asdmotion("/tmp/no_mediapipe.mp4")
+            assert res.get("mock") is True
+            assert res.get("repetitive_score") == 0.0
 
 
 def test_upload_session_invalid_session_id_format(client, db_session):
