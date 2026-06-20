@@ -107,6 +107,18 @@ COPY --from=builder /venv /venv
 # the hardcoded "./weights/..." lookups resolve to /opt/weights/... here.
 RUN /venv/bin/openface download --output /opt/weights
 
+# PATCH: openface-test==0.1.26's FaceDetector.preprocess_image() crashes
+# unconditionally on every video -- it always calls cv2.imread(image_path),
+# but process_video() (the actual code behind `openface detect-video`)
+# passes a raw decoded frame (np.ndarray from cv2.VideoCapture().read()),
+# not a path. This is a 100%-reproducible upstream bug, confirmed by
+# reading the installed package source and reproducing the exact
+# "Expected 'filename' to be a str or path-like object" error locally.
+# See backend/patches/openface_face_detection.py for the full writeup and
+# an isolated before/after test. Overwriting the installed copy is the
+# cleanest fix available without forking the whole package.
+COPY patches/openface_face_detection.py /venv/lib/python3.11/site-packages/openface/face_detection.py
+
 
 # App source — overridden at dev time by volume mount (see docker-compose.yml).
 # Baked in here so the image works standalone without a volume mount.
