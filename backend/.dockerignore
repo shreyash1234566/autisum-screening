@@ -20,9 +20,11 @@ __pycache__/
 htmlcov/
 tests/
 
-# Large ML artefacts — loaded at runtime from volume or regenerated on startup
-*.pkl
-*.joblib
+# Large ML artefacts that ARE regenerated/not needed at build time.
+# NOTE: ml/questionnaire_model.pkl and ml/encoders.pkl are loaded directly
+# from disk at runtime (see ml/inference.py) and must NOT be excluded here --
+# a blanket "*.pkl" rule used to silently break model loading in any deploy
+# without the dev-only ./backend:/app volume mount papering over it.
 *.h5
 *.pt
 *.pth

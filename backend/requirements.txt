@@ -20,7 +20,14 @@ pandas==2.2.3
 joblib==1.4.2
 
 # Video processing
-opencv-python-headless==4.9.0.80
+# NOTE: opencv-python-headless removed. openface-test's own PyPI metadata
+# pins opencv_python==4.11.0.86 AND opencv_contrib_python==4.11.0.86 as
+# its own dependencies (both full, non-headless builds) -- pip installs
+# those regardless of what we ask for here. Keeping opencv-python-headless
+# on top meant THREE overlapping OpenCV installs sharing the same `cv2`
+# import name, each several hundred MB, for zero benefit (the headless one
+# always got overwritten by openface-test's full build anyway since it
+# installs after). Just let openface-test bring its own.
 
 # OpenFace 3.0 Python wrapper
 openface-test==0.1.26

@@ -20,13 +20,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /build
 
 # ─── Build-only tools ────────────────────────────────────────────────────────
+# NOTE: removed libopencv-dev and cmake. Every OpenCV/mediapipe dependency
+# here resolves to a precompiled manylinux wheel (opencv-python-headless,
+# mediapipe) -- nothing in this build actually compiles against OpenCV C
+# headers or runs a CMake build. libopencv-dev alone is commonly 800MB-1.5GB
+# installed, which was a major contributor to running out of disk during
+# `docker compose build` in Codespaces. gcc/g++/build-essential are kept
+# since a couple of transitive deps (e.g. psycopg2 fallback paths) can still
+# need a C compiler if a wheel isn't available for the exact platform/Python
+# combo -- those three together are a fraction of libopencv-dev's size.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     g++ \
     build-essential \
     git \
-    cmake \
-    libopencv-dev \
     && rm -rf /var/lib/apt/lists/*
 
 # NOTE: We previously cloned https://github.com/Dinstein-Lab/ASDMotion here.
@@ -50,7 +57,11 @@ RUN python -m venv /venv && \
         torch==2.3.1+cpu torchvision==0.18.1+cpu \
         --extra-index-url https://download.pytorch.org/whl/cpu && \
     /venv/bin/pip install --no-cache-dir -r requirements.txt && \
-    /venv/bin/pip install --no-cache-dir ffmpeg-python omegaconf openface-test
+    /venv/bin/pip install --no-cache-dir openface-test
+    # NOTE: removed ffmpeg-python and omegaconf -- grepped the entire
+    # backend/ codebase, neither is imported anywhere. openface-test's own
+    # published dependencies (checked against its actual PyPI metadata)
+    # don't list either of them, so they were pure dead weight.
 
 # ─── Stage 2: lean runtime ───────────────────────────────────────────────────
 FROM python:3.11-slim AS runtime
@@ -61,16 +72,18 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Only the shared libraries opencv-python-headless needs at runtime.
-# No build headers (libgl-dev, etc.) — those stay in the builder.
+# Only the shared libraries OpenCV needs at runtime to even import cv2
+# (openface-test's own dependencies pull in full opencv-python, not just
+# opencv-python-headless -- see requirements.txt comment -- so these libs
+# are needed for dlopen() at import time even though nothing here ever
+# opens a GUI window). No build headers, no git, no ffmpeg binary -- the
+# only thing that used to need ffmpeg (ffmpeg-python) has been removed.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
     libxrender1 \
-    ffmpeg \
-    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the pre-built venv from Stage 1.
