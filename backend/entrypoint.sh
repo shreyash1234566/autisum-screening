@@ -32,18 +32,38 @@ if [ ! -f "$MARKER_FILE" ]; then
     # so retrying is cheap even on a partial failure.
     export HF_HUB_DOWNLOAD_TIMEOUT=120
 
+    # IMPORTANT: this calls snapshot_download() directly via Python, NOT
+    # the `openface download` CLI command. Checked the actual installed
+    # package source (openface/cli.py):
+    #   if not os.path.exists(save_path):
+    #       ... snapshot_download(...) ...
+    #   else:
+    #       print("Weights already exist. Skipping download.")
+    # That check only looks at whether the DIRECTORY exists -- not whether
+    # it's empty or contains the expected files. Docker creates a named
+    # volume's mount point as an empty directory the instant it's attached,
+    # before this script even runs. So `os.path.exists(save_path)` is True
+    # on the very first run against a fresh volume, the CLI concludes
+    # "weights already exist", and permanently skips downloading anything
+    # -- every single time, forever. snapshot_download() itself has no such
+    # bug: it checks each file's own completeness, so it's safe to call
+    # directly and safe to retry.
     success=0
     for i in 1 2 3 4 5; do
-        if openface download --output "$WEIGHTS_DIR"; then
+        if /venv/bin/python3 -c "
+from huggingface_hub import snapshot_download
+snapshot_download(repo_id='nutPace/openface_weights', local_dir='$WEIGHTS_DIR', repo_type='model')
+print('snapshot_download completed')
+"; then
             success=1
             break
         fi
-        echo "[entrypoint] openface download attempt $i/5 failed, retrying in 10s..."
+        echo "[entrypoint] weights download attempt $i/5 failed, retrying in 10s..."
         sleep 10
     done
 
     if [ "$success" -ne 1 ] || [ ! -f "$MARKER_FILE" ]; then
-        echo "[entrypoint] ERROR: OpenFace weights download failed after 5 attempts." >&2
+        echo "[entrypoint] ERROR: OpenFace weights download failed after $i attempt(s)." >&2
         echo "[entrypoint] Backend will still start -- openface_service.py falls back to a mock result when weights are missing, it will not crash the app." >&2
     else
         echo "[entrypoint] OpenFace weights downloaded successfully."
