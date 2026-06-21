@@ -132,13 +132,26 @@ def _parse_openface_output(file_path: str, delimiter: str = '\t') -> dict:
                 # OpenFace 3.0 might not have 'confidence' per frame in the same way
                 # but 'face_detection' contains [x1, y1, x2, y2, score]
                 try:
-                    det_str = row.get("face_detection", "[]")
-                    det = eval(det_str) if det_str.startswith('[') else []
-                    confidence = det[4] if len(det) > 4 else 1.0
-                except:
-                    confidence = 1.0
+                    det_str = row.get("face_detection", "")
+                    det = eval(det_str) if det_str.startswith('[') else None
+                    # FIX: was `else 1.0` -- meaning a row with NO face
+                    # detected at all (face_detection is empty/None, written
+                    # by process_video()'s else-branch when len(dets) == 0)
+                    # got treated as FULLY CONFIDENT and passed straight
+                    # through the filter below. That's backwards: no
+                    # detection should mean zero confidence, not perfect
+                    # confidence. It also meant we'd go on to try parsing
+                    # gaze_yaw/gaze_pitch for that row -- but those are
+                    # written as Python None (-> empty string in the CSV)
+                    # in that exact same no-face branch, so float(row['gaze_yaw'])
+                    # would crash immediately after. Defaulting to 0.0 here
+                    # means the `< 0.8` check below correctly `continue`s
+                    # past these rows before we ever reach that parsing.
+                    confidence = det[4] if det and len(det) > 4 else 0.0
+                except Exception:
+                    confidence = 0.0
 
-                if confidence < 0.8: # Reject low-confidence face detections
+                if confidence < 0.8: # Reject low-confidence AND no-detection frames
                     continue
 
                 # Parse action units
@@ -156,7 +169,19 @@ def _parse_openface_output(file_path: str, delimiter: str = '\t') -> dict:
 
                 frames.append({
                     "frame":       i,
-                    "timestamp_s": float(row.get("timestamp", i/30.0)),
+                    # FIX: openface-test's process_video() writes
+                    # datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # into the 'timestamp' column -- a wall-clock string
+                    # (e.g. '2026-06-21 12:38:38'), not a video-relative
+                    # number of seconds. Confirmed by reading the actual
+                    # installed package source (openface/demo.py); this is
+                    # not something that varies by input, so there's no
+                    # fallback case where the column is ever numeric. The
+                    # row.get("timestamp", i/30.0) default never helped --
+                    # the key is always present, just always non-numeric --
+                    # so float() reliably crashed on every real video.
+                    # Just compute frame-index-based timing directly.
+                    "timestamp_s": i / 30.0,
                     "confidence":  confidence,
                     "au6":         au6,
                     "au12":        au12,
