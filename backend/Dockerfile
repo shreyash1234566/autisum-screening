@@ -90,22 +90,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # The final image contains zero build tools.
 COPY --from=builder /venv /venv
 
-# Download OpenFace models.
+# OpenFace weight download moved OUT of the image build entirely -- see
+# entrypoint.sh and the openface_weights volume in docker-compose.yml.
 #
-# CRITICAL: --output is set to /opt/weights, NOT the default './weights'
-# (relative to WORKDIR /app). Every weight path inside the openface-test
-# package is hardcoded as a relative './weights/...' string with no env
-# var or CLI override (confirmed against the actual package source:
-# openface/demo.py and the vendored Pytorch_Retinaface/models/retinaface.py
-# both do this). docker-compose.yml mounts ./backend:/app for dev hot-
-# reload, which REPLACES the entire /app directory at container start --
-# including anything baked into /app/weights during this build step. Since
-# the host's backend/ folder has no weights/ dir (the download only ever
-# happened inside the image), that bind mount silently erased the weights
-# at runtime. /opt is never touched by any volume mount, so it survives.
-# openface_service.py runs the detect-video subprocess with cwd="/opt" so
-# the hardcoded "./weights/..." lookups resolve to /opt/weights/... here.
-RUN /venv/bin/openface download --output /opt/weights
+# Why: weights were previously downloaded here with `RUN openface download
+# --output /opt/weights`, baked directly into this image layer. Every
+# Dockerfile edit (there have been several: the relative-path fix, the
+# frame-vs-path crash fix, the HF timeout fix) triggered a full rebuild
+# that re-downloaded and re-baked ~300-500MB of weights into a brand new
+# layer every time, while the previous image's copy became dangling but
+# kept consuming disk until pruned. In a disk-constrained Codespace, that
+# is the single biggest cause of repeated "no space left on device"
+# failures across iterative bug fixes -- far bigger than any pip package.
+# Decoupling the weights into a named volume means a code-only rebuild
+# no longer touches them at all.
 
 # PATCH: openface-test==0.1.26's FaceDetector.preprocess_image() crashes
 # unconditionally on every video -- it always calls cv2.imread(image_path),
@@ -124,6 +122,12 @@ COPY patches/openface_face_detection.py /venv/lib/python3.11/site-packages/openf
 # Baked in here so the image works standalone without a volume mount.
 COPY . .
 
+# entrypoint.sh goes OUTSIDE /app deliberately -- same reasoning as the
+# /opt/weights fix earlier: anything placed under /app would be erased by
+# the docker-compose.yml dev bind mount the instant the container starts.
+COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
 # Video storage directory — persisted via Docker volume at runtime.
 RUN mkdir -p /data/videos
 
@@ -135,4 +139,8 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
       "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')" \
       || exit 1
 
+# ENTRYPOINT runs the weight-download check, then execs whatever CMD ends up
+# being (either this default, or docker-compose.yml's `command:` override
+# for dev's --reload flag -- ENTRYPOINT scripts receive CMD as "$@").
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
