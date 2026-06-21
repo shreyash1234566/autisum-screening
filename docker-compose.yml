@@ -55,6 +55,7 @@ services:
       ASDMOTION_PATH:     /opt/ASDMotion
     volumes:
       - videodata:/data/videos
+      - openface_weights:/opt/weights   # downloaded once by entrypoint.sh, survives rebuilds
       - ./backend:/app      # dev: hot-reload via source mount — remove for production
     depends_on:
       db:
@@ -98,3 +99,4 @@ services:
 volumes:
   pgdata:
   videodata:
+  openface_weights:
