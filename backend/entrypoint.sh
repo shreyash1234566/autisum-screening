@@ -21,10 +21,39 @@
 set -e
 
 WEIGHTS_DIR="/opt/weights"
-MARKER_FILE="$WEIGHTS_DIR/Alignment_RetinaFace.pth"
 
-if [ ! -f "$MARKER_FILE" ]; then
-    echo "[entrypoint] OpenFace weights not found in volume at $WEIGHTS_DIR -- downloading (first run only)..."
+# FIX: was a single marker file (Alignment_RetinaFace.pth). The pipeline
+# actually needs all four of these (confirmed by reading the actual
+# openface-test package source across several debugging rounds:
+# openface/demo.py hardcodes the first three paths directly; the vendored
+# Pytorch_Retinaface/models/retinaface.py hardcodes the fourth internally
+# whenever cfg['pretrain'] is True, which it always is here). A single-file
+# check meant that once ANY past download attempt got interrupted (the HF
+# read-timeout case from a few commits back) but happened to land this one
+# specific file before failing on the others, this script would conclude
+# "weights already present" FOREVER -- the volume persists across restarts,
+# so a partial download from one bad run silently breaks every run after
+# it, with no way to self-correct. Different container runs in practice
+# have shown different missing files (mobilenetV1X0.25_pretrain.tar one
+# time, Landmark_98.pkl another) -- both symptoms of the same underlying
+# partial-download state, just whichever file happened to still be missing
+# at that point.
+REQUIRED_FILES=(
+    "$WEIGHTS_DIR/Alignment_RetinaFace.pth"
+    "$WEIGHTS_DIR/Landmark_98.pkl"
+    "$WEIGHTS_DIR/MTL_backbone.pth"
+    "$WEIGHTS_DIR/mobilenetV1X0.25_pretrain.tar"
+)
+
+weights_complete() {
+    for f in "${REQUIRED_FILES[@]}"; do
+        [ -f "$f" ] || return 1
+    done
+    return 0
+}
+
+if ! weights_complete; then
+    echo "[entrypoint] OpenFace weights incomplete or missing in volume at $WEIGHTS_DIR -- downloading..."
 
     # Same timeout/retry logic that used to live in the Dockerfile -- HF's
     # own default read timeout (10s) is too tight for a slow/throttled
@@ -62,8 +91,12 @@ print('snapshot_download completed')
         sleep 10
     done
 
-    if [ "$success" -ne 1 ] || [ ! -f "$MARKER_FILE" ]; then
-        echo "[entrypoint] ERROR: OpenFace weights download failed after $i attempt(s)." >&2
+    if [ "$success" -ne 1 ] || ! weights_complete; then
+        echo "[entrypoint] ERROR: OpenFace weights download failed or incomplete after $i attempt(s)." >&2
+        echo "[entrypoint] Missing files:" >&2
+        for f in "${REQUIRED_FILES[@]}"; do
+            [ -f "$f" ] || echo "[entrypoint]   - $f" >&2
+        done
         echo "[entrypoint] Backend will still start -- openface_service.py falls back to a mock result when weights are missing, it will not crash the app." >&2
     else
         echo "[entrypoint] OpenFace weights downloaded successfully."
