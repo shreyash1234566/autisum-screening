@@ -112,16 +112,4 @@ class Doctor(Base):
 
 Base.metadata.create_all(bind=engine)
 
-if engine.dialect.name == "postgresql":
-    from sqlalchemy import text
-    with engine.connect() as conn:
-        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS processing_note TEXT"))
-        # New per-task video columns (replacing the old single video_path).
-        # The old video_path column, if present from a prior deploy, is left
-        # in place unused rather than dropped -- harmless, and avoids a
-        # destructive migration on existing data.
-        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS video_task_a_path VARCHAR"))
-        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS video_task_b_path VARCHAR"))
-        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS video_task_c_path VARCHAR"))
-        conn.execute(text("ALTER TABLE sessions ADD COLUMN IF NOT EXISTS per_task_video_analysis JSON DEFAULT '{}'"))
-        conn.commit()
+# PostgreSQL-only migrations removed — SQLite handles schema via create_all above

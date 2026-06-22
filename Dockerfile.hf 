@@ -1,0 +1,86 @@
+# ── Stage 1: Build React Dashboard ─────────────────────────────────────────
+FROM node:20-slim AS dashboard-build
+
+WORKDIR /build
+COPY dashboard/package.json dashboard/package-lock.json* ./
+RUN npm ci --silent
+
+COPY dashboard/ ./
+# Point API calls to /api (relative, nginx will proxy to FastAPI)
+ENV REACT_APP_API_URL=/api
+RUN npm run build
+
+# ── Stage 2: Python + nginx + supervisord ───────────────────────────────────
+FROM python:3.11-slim
+
+# System deps
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nginx \
+    supervisor \
+    libgl1 \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender-dev \
+    libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create data dir for SQLite + video storage (HF persistent storage mounts here)
+RUN mkdir -p /data/videos
+
+# ── Install Python deps ──────────────────────────────────────────────────────
+WORKDIR /app/backend
+COPY backend/requirements.txt .
+
+# Use SQLite-compatible requirements (drop psycopg2, keep everything else)
+RUN pip install --no-cache-dir \
+    fastapi==0.111.0 \
+    uvicorn[standard]==0.30.1 \
+    python-multipart==0.0.9 \
+    sqlalchemy==2.0.30 \
+    alembic==1.13.1 \
+    pydantic==2.7.3 \
+    pydantic-settings==2.3.1 \
+    python-jose[cryptography]==3.3.0 \
+    passlib[bcrypt]==1.7.4 \
+    scikit-learn==1.5.0 \
+    numpy==1.26.4 \
+    pandas==2.2.3 \
+    joblib==1.4.2 \
+    mediapipe==0.10.14 \
+    boto3==1.34.131 \
+    httpx==0.27.0 \
+    python-dotenv==1.0.1 \
+    aiofiles==23.2.1 \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch==2.3.1+cpu \
+    torchvision==0.18.1+cpu
+
+# Install openface separately (it brings its own opencv)
+RUN pip install --no-cache-dir openface-test==0.1.26
+
+# ── Copy backend code ────────────────────────────────────────────────────────
+COPY backend/ /app/backend/
+
+# ── Copy React build into nginx html dir ────────────────────────────────────
+COPY --from=dashboard-build /build/build /usr/share/nginx/html
+
+# ── nginx config (port 7860 — HF requirement) ───────────────────────────────
+COPY nginx.hf.conf /etc/nginx/sites-available/default
+
+# ── supervisord config ───────────────────────────────────────────────────────
+COPY supervisord.hf.conf /etc/supervisor/conf.d/autiscreen.conf
+
+# ── HF Space runs as non-root, fix permissions ──────────────────────────────
+RUN chmod -R 777 /var/log/nginx /var/lib/nginx /run /data && \
+    chown -R www-data:www-data /usr/share/nginx/html
+
+EXPOSE 7860
+
+# Set SQLite DB URL and storage path via env
+ENV DATABASE_URL="sqlite:////data/autiscreen.db" \
+    VIDEO_STORAGE_PATH="/data/videos" \
+    SECRET_KEY="change_me_set_in_hf_space_secrets" \
+    DEBUG="false"
+
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/autiscreen.conf"]

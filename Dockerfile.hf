@@ -1,0 +1,36 @@
+FROM node:20-slim AS dashboard-build
+WORKDIR /build
+COPY dashboard/package.json dashboard/package-lock.json* ./
+RUN npm ci --silent
+COPY dashboard/ ./
+ENV REACT_APP_API_URL=/api
+RUN npm run build
+
+FROM python:3.11-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    nginx supervisor libgl1 libglib2.0-0 libsm6 libxext6 libxrender-dev libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
+RUN mkdir -p /data/videos
+WORKDIR /app/backend
+COPY backend/requirements.txt .
+RUN pip install --no-cache-dir \
+    fastapi==0.111.0 uvicorn[standard]==0.30.1 python-multipart==0.0.9 \
+    sqlalchemy==2.0.30 alembic==1.13.1 pydantic==2.7.3 pydantic-settings==2.3.1 \
+    python-jose[cryptography]==3.3.0 passlib[bcrypt]==1.7.4 \
+    scikit-learn==1.5.0 numpy==1.26.4 pandas==2.2.3 joblib==1.4.2 \
+    mediapipe==0.10.14 boto3==1.34.131 httpx==0.27.0 \
+    python-dotenv==1.0.1 aiofiles==23.2.1 \
+    --extra-index-url https://download.pytorch.org/whl/cpu \
+    torch==2.3.1+cpu torchvision==0.18.1+cpu
+RUN pip install --no-cache-dir openface-test==0.1.26
+COPY backend/ /app/backend/
+COPY --from=dashboard-build /build/build /usr/share/nginx/html
+COPY nginx.hf.conf /etc/nginx/sites-available/default
+COPY supervisord.hf.conf /etc/supervisor/conf.d/autiscreen.conf
+RUN chmod -R 777 /var/log/nginx /var/lib/nginx /run /data
+EXPOSE 7860
+ENV DATABASE_URL="sqlite:////data/autiscreen.db" \
+    VIDEO_STORAGE_PATH="/data/videos" \
+    SECRET_KEY="change_me_in_hf_secrets" \
+    DEBUG="false"
+CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/autiscreen.conf"]

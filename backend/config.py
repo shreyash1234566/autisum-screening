@@ -1,7 +1,7 @@
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
-    DATABASE_URL: str = "postgresql://autism_user:autism_pass@db:5432/autism_db"
+    DATABASE_URL: str = "sqlite:////data/autiscreen.db"
     SECRET_KEY: str = "CHANGE_ME_IN_PRODUCTION_use_openssl_rand_hex_32"
     VIDEO_STORAGE_PATH: str = "/data/videos"
     S3_BUCKET: str = "autism-sessions"

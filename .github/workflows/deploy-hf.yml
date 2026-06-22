@@ -1,0 +1,28 @@
+name: Deploy to Hugging Face Space
+on:
+  push:
+    branches: [ayush]
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push to HF Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git config --global user.email "deploy@autiscreen.ai"
+          git config --global user.name "Deploy Bot"
+          git clone https://shreyashKu:$HF_TOKEN@huggingface.co/spaces/shreyashKu/autiscreen hf_space
+          cd hf_space
+          rsync -av --delete \
+            --exclude='.git' --exclude='mobile/' --exclude='ml/data/' \
+            --exclude='*.md' --exclude='.github/' \
+            ../ ./
+          cp Dockerfile.hf Dockerfile
+          git add -A
+          git diff --cached --quiet && echo "No changes" && exit 0
+          git commit -m "Deploy ${{ github.sha }}"
+          git push
